@@ -81,8 +81,9 @@ async function generateEmotionalResponse(userMessage, emotion) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      max_tokens: 150,
-      temperature: 0.7
+      max_tokens: 100, // Reduced from 150 for faster response
+      temperature: 0.7,
+      stream: false // Ensure we get complete response quickly
     });
 
     return completion.choices[0].message.content;
@@ -92,9 +93,38 @@ async function generateEmotionalResponse(userMessage, emotion) {
   }
 }
 
+// Rate limiting for ElevenLabs API
+let lastAudioRequest = 0;
+const AUDIO_REQUEST_DELAY = 1000; // 1 second between requests
+
 // Convert text to speech using ElevenLabs
 async function textToSpeech(text, emotion = 'neutral') {
   try {
+    // Rate limiting to prevent API abuse detection
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastAudioRequest;
+    if (timeSinceLastRequest < AUDIO_REQUEST_DELAY) {
+      const waitTime = AUDIO_REQUEST_DELAY - timeSinceLastRequest;
+      debugLog('audio', `Rate limiting: waiting ${waitTime}ms before request`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    lastAudioRequest = Date.now();
+    
+    // Validate inputs
+    if (!text || text.trim().length === 0) {
+      throw new Error('Empty text provided for TTS');
+    }
+    
+    // Truncate text if too long
+    const maxLength = 500;
+    const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    
+    debugLog('audio', 'ElevenLabs TTS request', { 
+      textLength: truncatedText.length, 
+      emotion,
+      rateLimit: 'applied'
+    });
+
     // Adjust voice settings based on emotion
     const voiceSettings = {
       joy: { stability: 0.8, similarity_boost: 0.8, style: 0.7 },
@@ -111,7 +141,7 @@ async function textToSpeech(text, emotion = 'neutral') {
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
-        text: text,
+        text: truncatedText,
         model_id: process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
         voice_settings: settings
       },
@@ -121,13 +151,20 @@ async function textToSpeech(text, emotion = 'neutral') {
           'Content-Type': 'application/json',
           'xi-api-key': process.env.ELEVENLABS_API_KEY
         },
-        responseType: 'arraybuffer'
+        responseType: 'arraybuffer',
+        timeout: 10000 // 10 second timeout
       }
     );
 
     return Buffer.from(response.data);
   } catch (error) {
-    console.error('Error in text-to-speech:', error.response?.data || error.message);
+    console.error('Error in text-to-speech:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      url: error.config?.url
+    });
     throw error;
   }
 }
@@ -142,32 +179,50 @@ const debugLog = (category, message, data = null) => {
 wss.on('connection', (ws) => {
   debugLog('websocket', '🔌 New WebSocket connection established');
   
+  // Set TCP_NODELAY for lower latency
+  ws._socket.setNoDelay(true);
+  
   ws.on('message', async (message) => {
+    const startTime = Date.now();
+    
     try {
       const data = JSON.parse(message);
-      debugLog('websocket', '📨 Received message from client', data);
+      debugLog('websocket', '📨 Received message from client', { type: data.type, textLength: data.text?.length });
       
       if (data.type === 'voice_message') {
-        debugLog('processing', '🎭 Processing voice message', { text: data.text });
+        debugLog('processing', '🎭 Processing voice message', { text: data.text.substring(0, 50) + '...' });
         
-        // Process voice message
+        // Process voice message with parallel execution
         const emotion = detectEmotionFromText(data.text);
-        debugLog('emotion', '😊 Emotion detected', { emotion, text: data.text });
+        debugLog('emotion', '😊 Emotion detected', { emotion });
         
-        const aiResponse = await generateEmotionalResponse(data.text, emotion);
-        debugLog('ai', '🤖 AI response generated', { response: aiResponse, emotion });
-        
-        // Send response back to client
+        // Send immediate response for UI feedback
         const responseData = {
           type: 'ai_response',
-          text: aiResponse,
+          text: '', // Will be filled by AI
           emotion: emotion,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          processing: true
         };
-        ws.send(JSON.stringify(responseData));
-        debugLog('websocket', '📤 Sent AI response to client', responseData);
         
-        // Generate speech audio
+        // Generate AI response asynchronously
+        const aiResponsePromise = generateEmotionalResponse(data.text, emotion);
+        
+        // Get AI response and send complete message
+        const aiResponse = await aiResponsePromise;
+        responseData.text = aiResponse;
+        responseData.processing = false;
+        
+        ws.send(JSON.stringify(responseData));
+        
+        const responseTime = Date.now() - startTime;
+        debugLog('websocket', '📤 Sent AI response to client', { 
+          responseTime: `${responseTime}ms`,
+          emotion,
+          textLength: aiResponse.length
+        });
+        
+        // Generate speech audio after text response (sequential, not parallel)
         try {
           debugLog('audio', '🔊 Generating speech audio', { emotion, textLength: aiResponse.length });
           const audioBuffer = await textToSpeech(aiResponse, emotion);
@@ -180,19 +235,22 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify(audioResponse));
           debugLog('audio', '✅ Audio response sent', { 
             audioSize: audioBuffer.length, 
-            base64Size: audioResponse.audio.length,
             emotion 
           });
         } catch (audioError) {
-          debugLog('error', '❌ Error generating audio', audioError);
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: 'Could not generate audio response'
-          }));
+          debugLog('error', '❌ Error generating audio', {
+            message: audioError.message,
+            status: audioError.response?.status,
+            statusText: audioError.response?.statusText
+          });
+          
+          // Don't send error to client - just skip audio for better UX
+          // The text response is already working, audio is optional
+          debugLog('audio', '⚠️ Skipping audio due to API issue - text response already sent');
         }
       }
     } catch (error) {
-      debugLog('error', '💥 WebSocket message error', error);
+      debugLog('error', '💥 WebSocket message error', error.message);
       ws.send(JSON.stringify({
         type: 'error',
         message: 'Server error processing message'

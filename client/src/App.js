@@ -251,6 +251,30 @@ const AudioLevelIndicator = styled.div.withConfig({
   }
 `;
 
+const TypingIndicator = styled.div.withConfig({
+  shouldForwardProp: (prop) => !['isVisible'].includes(prop)
+})`
+  display: ${props => props.isVisible ? 'flex' : 'none'};
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 15px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 18px;
+  max-width: 80%;
+  color: #666;
+  font-style: italic;
+  
+  &::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4ecdc4;
+    margin-left: 8px;
+    animation: ${pulse} 1s infinite;
+  }
+`;
+
 function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -262,6 +286,8 @@ function App() {
   const [debugInfo, setDebugInfo] = useState({});
   const [isContinuousMode, setIsContinuousMode] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [isAIResponding, setIsAIResponding] = useState(false);
+  const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -359,11 +385,17 @@ function App() {
             debugLog('websocket', 'Received message from server', data);
             
             if (data.type === 'ai_response') {
+              // Immediate feedback - stop loading state
+              setIsAIResponding(false);
+              setStatus('Connected - Ready to chat!');
+              
               debugLog('ai_response', 'Received AI response', {
                 text: data.text,
                 emotion: data.emotion,
                 timestamp: data.timestamp
               });
+              
+              // Add message immediately for instant UI update
               setMessages(prev => [...prev, {
                 text: data.text,
                 isUser: false,
@@ -379,7 +411,10 @@ function App() {
               playAudio(data.audio);
             } else if (data.type === 'error') {
               debugLog('error', 'Server error received', data.message);
-              setStatus(`Error: ${data.message}`);
+              // Don't show audio errors to user - text response is sufficient
+              if (!data.message.includes('audio')) {
+                setStatus(`Error: ${data.message}`);
+              }
             }
           } catch (error) {
             debugLog('error', 'Error parsing WebSocket message', error);
@@ -589,6 +624,7 @@ function App() {
         
         if (final) {
           currentTranscriptRef.current += final;
+          setLastSpeechTime(Date.now()); // Track last speech for responsiveness
           debugLog('speech', 'Final transcript added', { final, total: currentTranscriptRef.current });
         }
         
@@ -641,12 +677,18 @@ function App() {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          sampleRate: 16000, // Lower sample rate for faster processing
+          channelCount: 1,     // Mono for efficiency
+          latency: 0.01       // 10ms latency target
         }
       });
       
       streamRef.current = stream;
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 16000, // Match microphone sample rate
+        latencyHint: 'interactive' // Prioritize low latency
+      });
       
       // Ensure audio context is running
       if (audioContextRef.current.state === 'suspended') {
@@ -655,11 +697,12 @@ function App() {
       
       const source = audioContextRef.current.createMediaStreamSource(stream);
       analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 512;
+      analyserRef.current.fftSize = 256; // Smaller FFT for faster processing
+      analyserRef.current.smoothingTimeConstant = 0.3; // Less smoothing for responsiveness
       source.connect(analyserRef.current);
       
       // Wait a moment for everything to be connected
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 50)); // Reduced from 100ms
       
       // Start monitoring audio levels
       debugLog('silence', 'Starting audio level monitoring');
@@ -735,9 +778,13 @@ function App() {
       }
       
       if (currentTranscriptRef.current.trim() !== '') {
-        debugLog('silence', '3-second silence detected, processing transcript', {
+        debugLog('silence', '1.5-second silence detected, processing transcript', {
           transcript: currentTranscriptRef.current.trim()
         });
+        
+        // Show immediate processing feedback
+        setIsAIResponding(true);
+        setStatus('AI is thinking...');
         
         // Process the accumulated transcript
         processTranscriptSegment(currentTranscriptRef.current.trim());
@@ -745,7 +792,7 @@ function App() {
         // Clear the current transcript
         currentTranscriptRef.current = '';
       }
-    }, 3000); // 3 seconds of silence
+    }, 1500); // 1.5 seconds of silence for faster response
   };
 
   // Process transcript segment and generate AI response
@@ -773,14 +820,15 @@ function App() {
       setMessages(prev => [...prev, userMessage]);
       debugLog('user_message', 'User message added from continuous mode', userMessage);
       
-      // Send to WebSocket for AI response
+      // Send to WebSocket for AI response with optimized payload
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         const messageData = {
           type: 'voice_message',
           text: transcript,
-          emotion: emotion
+          emotion: emotion,
+          timestamp: Date.now() // Add timestamp for latency tracking
         };
-        debugLog('websocket', 'Sending continuous transcript to server', messageData);
+        debugLog('websocket', 'Sending continuous transcript to server', { text: transcript, emotion });
         wsRef.current.send(JSON.stringify(messageData));
       } else {
         debugLog('error', 'WebSocket not connected for continuous mode');
@@ -1156,7 +1204,12 @@ function App() {
               )}
             </Message>
           ))}
-          {messages.length === 0 && (
+          
+          <TypingIndicator isVisible={isAIResponding}>
+            🤖 AI is thinking...
+          </TypingIndicator>
+          
+          {messages.length === 0 && !isAIResponding && (
             <div style={{ textAlign: 'center', opacity: 0.7, marginTop: '50px' }}>
               Start a conversation by pressing the microphone button or typing below!
             </div>
@@ -1201,9 +1254,10 @@ function App() {
           <div>WebSocket State: {wsRef.current ? wsRef.current.readyState : 'null'}</div>
           <div>Recording: {isRecording ? '🎤 Recording' : '⏹️ Stopped'}</div>
           <div>Continuous: {isContinuousMode ? '🔄 Active' : '⏸️ Inactive'}</div>
-          <div>Processing: {isProcessing ? '⏳ Processing' : '✅ Ready'}</div>
+          <div>AI Status: {isAIResponding ? '⏳ Thinking' : '✅ Ready'}</div>
           <div>Audio Level: {(audioLevel * 100).toFixed(1)}%</div>
           <div>Emotion: {currentEmotion}</div>
+          <div>Last Speech: {Math.round((Date.now() - lastSpeechTime) / 1000)}s ago</div>
           <div>Status: {status}</div>
           <div style={{ marginTop: '10px' }}>
             <strong>Recent Logs:</strong>
