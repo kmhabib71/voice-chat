@@ -287,7 +287,11 @@ function App() {
   const [isContinuousMode, setIsContinuousMode] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [isAIResponding, setIsAIResponding] = useState(false);
+  const [recognitionRestartCount, setRecognitionRestartCount] = useState(0);
+  const [lastRecognitionError, setLastRecognitionError] = useState(null);
   const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
+  const recognitionRestartCountRef = useRef(0);
+  const recognitionRestartTimeoutRef = useRef(null);
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -519,6 +523,10 @@ function App() {
         clearTimeout(silenceTimerRef.current);
       }
       
+      if (recognitionRestartTimeoutRef.current) {
+        clearTimeout(recognitionRestartTimeoutRef.current);
+      }
+      
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
@@ -545,22 +553,56 @@ function App() {
     });
   }, [isContinuousMode]);
 
-  const playAudio = (base64Audio) => {
+  const playAudio = async (base64Audio) => {
     try {
-      debugLog('audio', 'Attempting to play audio', { audioLength: base64Audio?.length });
-      const audioBlob = new Blob([Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0))], {
-        type: 'audio/mpeg'
-      });
+      debugLog('audio', 'Attempting to play audio (optimized)', { audioLength: base64Audio?.length });
+      const audioStartTime = Date.now();
+      
+      // Convert base64 to ArrayBuffer for faster processing
+      const binaryString = atob(base64Audio);
+      const arrayBuffer = new ArrayBuffer(binaryString.length);
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      for (let i = 0; i < binaryString.length; i++) {
+        uint8Array[i] = binaryString.charCodeAt(i);
+      }
+      
+      // Create audio blob with optimized type
+      const audioBlob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
       const audioUrl = URL.createObjectURL(audioBlob);
       
       if (audioRef.current) {
+        // Preload and play immediately
+        audioRef.current.preload = 'auto';
         audioRef.current.src = audioUrl;
-        audioRef.current.play()
-          .then(() => debugLog('audio', 'Audio playback started successfully'))
-          .catch(error => debugLog('error', 'Audio playback failed', error));
+        
+        // Load and play as soon as possible
+        const playPromise = audioRef.current.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              const playbackLatency = Date.now() - audioStartTime;
+              debugLog('audio', 'Audio playback started successfully', { latency: `${playbackLatency}ms` });
+            })
+            .catch(error => {
+              debugLog('error', 'Audio playback failed', error);
+              // Fallback: try again after a short delay
+              setTimeout(() => {
+                audioRef.current?.play().catch(e => 
+                  debugLog('error', 'Audio playback retry failed', e)
+                );
+              }, 100);
+            });
+        }
+        
+        // Clean up URL after playback to free memory
+        audioRef.current.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+        };
       }
     } catch (error) {
-      debugLog('error', 'Error creating audio blob', error);
+      debugLog('error', 'Error in optimized audio playback', error);
     }
   };
 
@@ -589,6 +631,67 @@ function App() {
     }, 500);
   };
 
+  // Schedule recognition restart with backoff and limits
+  const scheduleRecognitionRestart = (delay = 1000) => {
+    // Clear any existing restart timeout
+    if (recognitionRestartTimeoutRef.current) {
+      clearTimeout(recognitionRestartTimeoutRef.current);
+    }
+    
+    // Prevent too many rapid restarts
+    const maxRestarts = 10;
+    if (recognitionRestartCountRef.current >= maxRestarts) {
+      debugLog('recovery', `Max restart attempts reached (${maxRestarts}), stopping continuous mode`);
+      setStatus('❌ Too many recognition errors - Please restart continuous mode manually');
+      setIsContinuousMode(false);
+      isContinuousModeRef.current = false;
+      return;
+    }
+    
+    // Exponential backoff for repeated errors
+    const backoffDelay = Math.min(delay * Math.pow(1.5, recognitionRestartCountRef.current), 10000);
+    
+    debugLog('recovery', `Scheduling recognition restart in ${backoffDelay}ms (attempt ${recognitionRestartCountRef.current + 1})`);
+    
+    recognitionRestartTimeoutRef.current = setTimeout(() => {
+      if (!isContinuousModeRef.current) {
+        debugLog('recovery', 'Restart cancelled - continuous mode disabled');
+        return;
+      }
+      
+      try {
+        if (recognitionRef.current) {
+          recognitionRestartCountRef.current++;
+          setRecognitionRestartCount(recognitionRestartCountRef.current);
+          
+          debugLog('recovery', `Attempting to restart recognition (attempt ${recognitionRestartCountRef.current})`);
+          recognitionRef.current.start();
+          
+          setStatus('Continuous mode active - Listening...');
+          setLastRecognitionError(null);
+          
+          // Reset restart count on successful start
+          setTimeout(() => {
+            if (recognitionRestartCountRef.current > 0) {
+              recognitionRestartCountRef.current = Math.max(0, recognitionRestartCountRef.current - 1);
+              setRecognitionRestartCount(recognitionRestartCountRef.current);
+            }
+          }, 5000); // Reduce restart count after 5 seconds of successful operation
+          
+        } else {
+          debugLog('recovery', 'Cannot restart - recognition object is null');
+        }
+      } catch (error) {
+        debugLog('error', 'Failed to restart recognition', error);
+        
+        // If restart fails, try again with longer delay
+        if (isContinuousModeRef.current && recognitionRestartCountRef.current < maxRestarts) {
+          scheduleRecognitionRestart(backoffDelay * 2);
+        }
+      }
+    }, backoffDelay);
+  };
+
   // Setup continuous speech recognition with silence detection
   const setupContinuousRecognition = async () => {
     try {
@@ -610,6 +713,18 @@ function App() {
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = 'en-US';
+      recognitionRef.current.maxAlternatives = 1;
+      
+      // Add additional configuration for better reliability
+      if ('grammars' in recognitionRef.current) {
+        // Some browsers support grammar lists for better recognition
+        recognitionRef.current.grammars = new (window.SpeechGrammarList || window.webkitSpeechGrammarList)();
+      }
+      
+      // Reset restart counters for new session
+      recognitionRestartCountRef.current = 0;
+      setRecognitionRestartCount(0);
+      setLastRecognitionError(null);
 
       // Handle speech results
       recognitionRef.current.onresult = (event) => {
@@ -633,34 +748,112 @@ function App() {
       };
 
       recognitionRef.current.onerror = (error) => {
-        debugLog('error', 'Speech recognition error', error);
-      };
-
-      recognitionRef.current.onend = () => {
-        debugLog('continuous', 'Recognition ended');
-        // Use ref for immediate state checking
-        if (isContinuousModeRef.current) {
-          debugLog('continuous', 'Restarting recognition for continuous mode');
-          setTimeout(() => {
-            if (recognitionRef.current && isContinuousModeRef.current) {
-              try {
-                recognitionRef.current.start();
-                debugLog('continuous', 'Recognition restarted successfully');
-              } catch (error) {
-                debugLog('error', 'Error restarting recognition', error);
-                // If restart fails, don't disable continuous mode automatically
-                // Let user manually stop it
-              }
+        debugLog('error', 'Speech recognition error', {
+          error: error.error,
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          restartCount: recognitionRestartCountRef.current
+        });
+        
+        setLastRecognitionError(error.error);
+        
+        // Handle different types of errors with specific strategies
+        switch (error.error) {
+          case 'no-speech':
+            debugLog('recovery', 'No speech detected - normal in continuous mode, will auto-restart');
+            // No speech is normal in continuous mode, just let onend handle restart
+            break;
+            
+          case 'aborted':
+            debugLog('recovery', 'Recognition aborted - likely due to mode change');
+            // Don't restart if aborted (usually means user stopped it)
+            break;
+            
+          case 'audio-capture':
+            debugLog('recovery', 'Audio capture error - checking microphone permissions');
+            setStatus('⚠️ Microphone access issue - Please check permissions');
+            // Try to restart after a longer delay
+            if (isContinuousModeRef.current) {
+              scheduleRecognitionRestart(2000);
             }
-          }, 100);
+            break;
+            
+          case 'not-allowed':
+            debugLog('recovery', 'Microphone permission denied');
+            setStatus('❌ Microphone permission denied - Please allow microphone access');
+            setIsContinuousMode(false);
+            isContinuousModeRef.current = false;
+            break;
+            
+          case 'service-not-allowed':
+            debugLog('recovery', 'Speech service not allowed');
+            setStatus('❌ Speech recognition service blocked - Check browser settings');
+            break;
+            
+          case 'bad-grammar':
+          case 'language-not-supported':
+            debugLog('recovery', 'Language/grammar error - using fallback settings');
+            // Try restarting with more permissive settings
+            if (isContinuousModeRef.current) {
+              scheduleRecognitionRestart(1000);
+            }
+            break;
+            
+          case 'network':
+            debugLog('recovery', 'Network error - will retry');
+            setStatus('🌐 Network issue - Retrying recognition...');
+            if (isContinuousModeRef.current) {
+              scheduleRecognitionRestart(3000);
+            }
+            break;
+            
+          default:
+            debugLog('recovery', `Unhandled error type: ${error.error} - will attempt restart`);
+            if (isContinuousModeRef.current) {
+              scheduleRecognitionRestart(1500);
+            }
+            break;
+        }
+      };
+      
+      // Enhanced onend handler with restart logic
+      recognitionRef.current.onend = () => {
+        debugLog('continuous', 'Recognition ended', {
+          continuousMode: isContinuousModeRef.current,
+          restartCount: recognitionRestartCountRef.current,
+          lastError: lastRecognitionError
+        });
+        
+        // Only restart if continuous mode is still active
+        if (isContinuousModeRef.current) {
+          scheduleRecognitionRestart(100); // Quick restart for normal end
         } else {
           debugLog('continuous', 'Recognition ended - continuous mode disabled');
         }
       };
       
-      // Start recognition
-      recognitionRef.current.start();
-      debugLog('continuous', 'Speech recognition started');
+      // Start recognition with error handling
+      try {
+        recognitionRef.current.start();
+        debugLog('continuous', 'Speech recognition started successfully');
+        setStatus('Continuous mode active - Listening...');
+      } catch (startError) {
+        debugLog('error', 'Error starting recognition immediately', startError);
+        
+        // Sometimes recognition needs a moment before starting
+        setTimeout(() => {
+          if (recognitionRef.current && isContinuousModeRef.current) {
+            try {
+              recognitionRef.current.start();
+              debugLog('continuous', 'Speech recognition started after delay');
+              setStatus('Continuous mode active - Listening...');
+            } catch (retryError) {
+              debugLog('error', 'Failed to start recognition after retry', retryError);
+              setStatus('Error starting speech recognition - Try again');
+            }
+          }
+        }, 500);
+      }
       
     } catch (error) {
       debugLog('error', 'Error setting up continuous recognition', error);
@@ -895,6 +1088,18 @@ function App() {
         debugLog('continuous', 'Silence timer cleared');
       }
       
+      // Clear recognition restart timeout
+      if (recognitionRestartTimeoutRef.current) {
+        clearTimeout(recognitionRestartTimeoutRef.current);
+        recognitionRestartTimeoutRef.current = null;
+        debugLog('continuous', 'Recognition restart timeout cleared');
+      }
+      
+      // Reset restart counters
+      recognitionRestartCountRef.current = 0;
+      setRecognitionRestartCount(0);
+      setLastRecognitionError(null);
+      
       // Stop audio stream
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => {
@@ -1075,6 +1280,39 @@ function App() {
     }
   };
 
+  // Manual restart function for speech recognition
+  const manualRestartRecognition = () => {
+    debugLog('manual', 'Manual recognition restart requested');
+    
+    // Reset error states
+    setLastRecognitionError(null);
+    recognitionRestartCountRef.current = 0;
+    setRecognitionRestartCount(0);
+    
+    // Clear any pending restart
+    if (recognitionRestartTimeoutRef.current) {
+      clearTimeout(recognitionRestartTimeoutRef.current);
+      recognitionRestartTimeoutRef.current = null;
+    }
+    
+    // Stop current recognition if running
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (error) {
+        debugLog('manual', 'Error stopping recognition for manual restart', error);
+      }
+    }
+    
+    // Restart after a brief delay
+    setTimeout(() => {
+      if (isContinuousModeRef.current) {
+        scheduleRecognitionRestart(100);
+        setStatus('Manually restarting speech recognition...');
+      }
+    }, 300);
+  };
+
   const sendTextMessage = async () => {
     if (!textInput.trim()) return;
     
@@ -1158,6 +1396,23 @@ function App() {
               Retry
             </button>
           )}
+          {isContinuousMode && (lastRecognitionError || recognitionRestartCount > 3) && (
+            <button 
+              onClick={manualRestartRecognition}
+              style={{
+                marginLeft: '10px',
+                padding: '4px 8px',
+                background: '#ff6b6b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '0.8rem'
+              }}
+            >
+              🔄 Fix Speech
+            </button>
+          )}
         </StatusIndicator>
         
         <ContinuousModeButton 
@@ -1232,7 +1487,18 @@ function App() {
           </SendButton>
         </div>
         
-        <audio ref={audioRef} style={{ display: 'none' }} />
+        <audio 
+          ref={audioRef} 
+          style={{ display: 'none' }}
+          preload="auto"
+          controls={false}
+          muted={false}
+          autoPlay={false}
+          crossOrigin="anonymous"
+          onLoadStart={() => debugLog('audio', 'Audio loading started')}
+          onCanPlay={() => debugLog('audio', 'Audio can play')}
+          onLoadedData={() => debugLog('audio', 'Audio data loaded')}
+        />
         
         {/* Debug Panel */}
         <div style={{ 
@@ -1258,6 +1524,10 @@ function App() {
           <div>Audio Level: {(audioLevel * 100).toFixed(1)}%</div>
           <div>Emotion: {currentEmotion}</div>
           <div>Last Speech: {Math.round((Date.now() - lastSpeechTime) / 1000)}s ago</div>
+          <div>Recognition Restarts: {recognitionRestartCount}</div>
+          {lastRecognitionError && (
+            <div style={{ color: '#ff6b6b' }}>Last Error: {lastRecognitionError}</div>
+          )}
           <div>Status: {status}</div>
           <div style={{ marginTop: '10px' }}>
             <strong>Recent Logs:</strong>

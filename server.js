@@ -81,8 +81,8 @@ async function generateEmotionalResponse(userMessage, emotion) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      max_tokens: 100, // Reduced from 150 for faster response
-      temperature: 0.7,
+      max_tokens: 50, // Further reduced for faster response and TTS
+      temperature: 0.5, // Lower for faster, more deterministic responses
       stream: false // Ensure we get complete response quickly
     });
 
@@ -93,9 +93,9 @@ async function generateEmotionalResponse(userMessage, emotion) {
   }
 }
 
-// Rate limiting for ElevenLabs API
+// Rate limiting for ElevenLabs API (optimized for speed)
 let lastAudioRequest = 0;
-const AUDIO_REQUEST_DELAY = 1000; // 1 second between requests
+const AUDIO_REQUEST_DELAY = 500; // Reduced to 500ms for faster generation
 
 // Convert text to speech using ElevenLabs
 async function textToSpeech(text, emotion = 'neutral') {
@@ -115,8 +115,8 @@ async function textToSpeech(text, emotion = 'neutral') {
       throw new Error('Empty text provided for TTS');
     }
     
-    // Truncate text if too long
-    const maxLength = 500;
+    // Truncate text aggressively for faster generation
+    const maxLength = 200; // Reduced from 500 to 200 for faster TTS
     const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
     
     debugLog('audio', 'ElevenLabs TTS request', { 
@@ -142,8 +142,15 @@ async function textToSpeech(text, emotion = 'neutral') {
       `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
         text: truncatedText,
-        model_id: process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
-        voice_settings: settings
+        model_id: 'eleven_turbo_v2', // Fastest model for speed
+        voice_settings: {
+          stability: 0.5, // Lower values for faster generation
+          similarity_boost: 0.5,
+          style: 0.0, // Remove style for speed
+          use_speaker_boost: false // Disable for speed
+        },
+        optimize_streaming_latency: 4, // Maximum optimization
+        output_format: 'mp3_22050_32' // Lower quality for speed
       },
       {
         headers: {
@@ -152,7 +159,7 @@ async function textToSpeech(text, emotion = 'neutral') {
           'xi-api-key': process.env.ELEVENLABS_API_KEY
         },
         responseType: 'arraybuffer',
-        timeout: 10000 // 10 second timeout
+        timeout: 5000 // Reduced to 5 seconds
       }
     );
 
@@ -222,32 +229,39 @@ wss.on('connection', (ws) => {
           textLength: aiResponse.length
         });
         
-        // Generate speech audio after text response (sequential, not parallel)
-        try {
-          debugLog('audio', '🔊 Generating speech audio', { emotion, textLength: aiResponse.length });
-          const audioBuffer = await textToSpeech(aiResponse, emotion);
-          
-          const audioResponse = {
-            type: 'audio_response',
-            audio: audioBuffer.toString('base64'),
-            emotion: emotion
-          };
-          ws.send(JSON.stringify(audioResponse));
-          debugLog('audio', '✅ Audio response sent', { 
-            audioSize: audioBuffer.length, 
-            emotion 
-          });
-        } catch (audioError) {
-          debugLog('error', '❌ Error generating audio', {
-            message: audioError.message,
-            status: audioError.response?.status,
-            statusText: audioError.response?.statusText
-          });
-          
-          // Don't send error to client - just skip audio for better UX
-          // The text response is already working, audio is optional
-          debugLog('audio', '⚠️ Skipping audio due to API issue - text response already sent');
-        }
+        // Generate speech audio in parallel for maximum speed
+        const audioPromise = (async () => {
+          try {
+            debugLog('audio', '🔊 Generating speech audio (parallel)', { emotion, textLength: aiResponse.length });
+            const audioStartTime = Date.now();
+            const audioBuffer = await textToSpeech(aiResponse, emotion);
+            const audioGenerationTime = Date.now() - audioStartTime;
+            
+            const audioResponse = {
+              type: 'audio_response',
+              audio: audioBuffer.toString('base64'),
+              emotion: emotion
+            };
+            ws.send(JSON.stringify(audioResponse));
+            debugLog('audio', '✅ Audio response sent', { 
+              audioSize: audioBuffer.length, 
+              emotion,
+              generationTime: `${audioGenerationTime}ms`
+            });
+          } catch (audioError) {
+            debugLog('error', '❌ Error generating audio', {
+              message: audioError.message,
+              status: audioError.response?.status,
+              statusText: audioError.response?.statusText
+            });
+            
+            // Don't send error to client - just skip audio for better UX
+            debugLog('audio', '⚠️ Skipping audio due to API issue - text response already sent');
+          }
+        })();
+        
+        // Don't await audio generation - let it happen in background
+        // This allows the conversation to continue without waiting for audio
       }
     } catch (error) {
       debugLog('error', '💥 WebSocket message error', error.message);
