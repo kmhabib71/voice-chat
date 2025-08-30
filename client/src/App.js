@@ -108,7 +108,9 @@ const ChatContainer = styled.div`
   border: 1px solid rgba(255, 255, 255, 0.2);
 `;
 
-const Message = styled.div`
+const Message = styled.div.withConfig({
+  shouldForwardProp: (prop) => !['isUser'].includes(prop)
+})`
   margin-bottom: 15px;
   padding: 12px 16px;
   border-radius: 18px;
@@ -271,6 +273,9 @@ function App() {
   const analyserRef = useRef(null);
   const currentTranscriptRef = useRef('');
   const streamRef = useRef(null);
+  const isContinuousModeRef = useRef(false); // Immediate state tracking
+  const connectionAttemptRef = useRef(false); // Prevent duplicate connections
+  const connectWebSocketRef = useRef(null); // Store connection function
 
   // Debug logging helper
   const debugLog = (category, message, data = null) => {
@@ -286,65 +291,188 @@ function App() {
 
   // Initialize WebSocket connection
   useEffect(() => {
+    let isComponentMounted = true;
+    let reconnectTimeout = null;
+    
     const connectWebSocket = () => {
-      debugLog('websocket', 'Attempting to connect to ws://localhost:3002');
-      const ws = new WebSocket('ws://localhost:3002');
+      // Prevent multiple simultaneous connection attempts
+      if (connectionAttemptRef.current) {
+        debugLog('websocket', 'Connection attempt already in progress, skipping');
+        return;
+      }
       
-      ws.onopen = () => {
-        debugLog('websocket', 'Connected to voice assistant successfully');
-        setIsConnected(true);
-        setStatus('Connected - Ready to chat!');
-      };
-      
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        debugLog('websocket', 'Received message from server', data);
-        
-        if (data.type === 'ai_response') {
-          debugLog('ai_response', 'Received AI response', {
-            text: data.text,
-            emotion: data.emotion,
-            timestamp: data.timestamp
-          });
-          setMessages(prev => [...prev, {
-            text: data.text,
-            isUser: false,
-            emotion: data.emotion,
-            timestamp: data.timestamp
-          }]);
-          setCurrentEmotion(data.emotion);
-        } else if (data.type === 'audio_response') {
-          debugLog('audio', 'Received audio response', {
-            audioLength: data.audio?.length || 0,
-            emotion: data.emotion
-          });
-          playAudio(data.audio);
-        } else if (data.type === 'error') {
-          debugLog('error', 'Server error received', data.message);
-          setStatus(`Error: ${data.message}`);
+      // Prevent multiple connections in development mode
+      if (wsRef.current) {
+        const currentState = wsRef.current.readyState;
+        if (currentState === WebSocket.CONNECTING || currentState === WebSocket.OPEN) {
+          debugLog('websocket', `WebSocket already connecting/connected (state: ${currentState}), skipping`);
+          return;
         }
-      };
+        // Close existing connection if it's in a bad state
+        if (currentState === WebSocket.CLOSING || currentState === WebSocket.CLOSED) {
+          debugLog('websocket', 'Cleaning up previous WebSocket connection');
+          wsRef.current = null;
+        }
+      }
       
-      ws.onclose = () => {
-        debugLog('websocket', 'Disconnected from voice assistant');
-        setIsConnected(false);
-        setStatus('Disconnected - Trying to reconnect...');
-        setTimeout(connectWebSocket, 3000);
-      };
+      connectionAttemptRef.current = true;
+      debugLog('websocket', 'Attempting to connect to ws://localhost:3002');
       
-      ws.onerror = (error) => {
-        debugLog('error', 'WebSocket connection error', error);
-        setStatus('Connection error');
-      };
-      
-      wsRef.current = ws;
+      try {
+        const ws = new WebSocket('ws://localhost:3002');
+        
+        // Set a connection timeout
+        const connectionTimeout = setTimeout(() => {
+          if (ws.readyState === WebSocket.CONNECTING) {
+            debugLog('websocket', 'Connection timeout, closing WebSocket');
+            ws.close();
+            connectionAttemptRef.current = false;
+          }
+        }, 5000); // 5 second timeout
+        
+        ws.onopen = () => {
+          clearTimeout(connectionTimeout);
+          connectionAttemptRef.current = false;
+          
+          if (!isComponentMounted) {
+            debugLog('websocket', 'Component unmounted, closing connection');
+            ws.close();
+            return;
+          }
+          
+          debugLog('websocket', 'Connected to voice assistant successfully');
+          setIsConnected(true);
+          setStatus('Connected - Ready to chat!');
+          
+          // Clear any pending reconnection attempts
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+          }
+        };
+        
+        ws.onmessage = (event) => {
+          if (!isComponentMounted) return;
+          
+          try {
+            const data = JSON.parse(event.data);
+            debugLog('websocket', 'Received message from server', data);
+            
+            if (data.type === 'ai_response') {
+              debugLog('ai_response', 'Received AI response', {
+                text: data.text,
+                emotion: data.emotion,
+                timestamp: data.timestamp
+              });
+              setMessages(prev => [...prev, {
+                text: data.text,
+                isUser: false,
+                emotion: data.emotion,
+                timestamp: data.timestamp
+              }]);
+              setCurrentEmotion(data.emotion);
+            } else if (data.type === 'audio_response') {
+              debugLog('audio', 'Received audio response', {
+                audioLength: data.audio?.length || 0,
+                emotion: data.emotion
+              });
+              playAudio(data.audio);
+            } else if (data.type === 'error') {
+              debugLog('error', 'Server error received', data.message);
+              setStatus(`Error: ${data.message}`);
+            }
+          } catch (error) {
+            debugLog('error', 'Error parsing WebSocket message', error);
+          }
+        };
+        
+        ws.onclose = (event) => {
+          clearTimeout(connectionTimeout);
+          connectionAttemptRef.current = false;
+          
+          if (!isComponentMounted) {
+            debugLog('websocket', 'Component unmounted, not attempting reconnect');
+            return;
+          }
+          
+          debugLog('websocket', `WebSocket closed (code: ${event.code}, reason: ${event.reason})`);
+          setIsConnected(false);
+          
+          // Only attempt reconnect for unexpected closures
+          if (event.code !== 1000 && event.code !== 1001) { // Not normal or going away
+            setStatus('Disconnected - Trying to reconnect...');
+            
+            // Exponential backoff for reconnection
+            const delay = Math.min(3000 * Math.pow(1.5, (reconnectTimeout ? 1 : 0)), 30000);
+            
+            reconnectTimeout = setTimeout(() => {
+              if (isComponentMounted && !isContinuousModeRef.current) {
+                debugLog('websocket', `Attempting reconnection after ${delay}ms`);
+                connectWebSocket();
+              }
+            }, delay);
+          } else {
+            setStatus('Connection closed');
+          }
+        };
+        
+        ws.onerror = (error) => {
+          clearTimeout(connectionTimeout);
+          connectionAttemptRef.current = false;
+          
+          debugLog('error', 'WebSocket connection error', {
+            readyState: ws.readyState,
+            url: ws.url,
+            error: error.type
+          });
+          
+          setStatus('Connection error - Check if server is running');
+          
+          // Don't attempt immediate reconnection on error
+          // Let the onclose handler manage reconnection
+        };
+        
+        wsRef.current = ws;
+        
+      } catch (error) {
+        connectionAttemptRef.current = false;
+        debugLog('error', 'Error creating WebSocket connection', error);
+        setStatus('Failed to create connection');
+      }
     };
 
-    connectWebSocket();
+    // Store the connection function so it can be called from outside
+    connectWebSocketRef.current = connectWebSocket;
+
+    // Initial connection attempt with a small delay to ensure component is mounted
+    const initialConnectionTimeout = setTimeout(() => {
+      if (isComponentMounted) {
+        connectWebSocket();
+      }
+    }, 100);
     
     return () => {
+      isComponentMounted = false;
+      
+      // Clear all timeouts
+      clearTimeout(initialConnectionTimeout);
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      
+      // Reset connection attempt flag
+      connectionAttemptRef.current = false;
+      
+      // Close WebSocket connection
       if (wsRef.current) {
-        wsRef.current.close();
+        // Set to closing state to prevent reconnection
+        const ws = wsRef.current;
+        wsRef.current = null;
+        
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          debugLog('websocket', 'Closing WebSocket connection on cleanup');
+          ws.close(1000, 'Component unmounting');
+        }
       }
       
       // Cleanup continuous mode resources
@@ -360,11 +488,27 @@ function App() {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
       
-      if (audioContextRef.current) {
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close();
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Intentionally excluding dependencies to prevent reconnections
+
+  // Monitor continuous mode state changes and sync with ref
+  useEffect(() => {
+    isContinuousModeRef.current = isContinuousMode;
+    debugLog('continuous', `Continuous mode state changed to: ${isContinuousMode}`);
+    
+    // Log the current state of all refs when continuous mode changes
+    debugLog('continuous', 'Current refs state:', {
+      recognition: !!recognitionRef.current,
+      audioContext: !!audioContextRef.current,
+      stream: !!streamRef.current,
+      silenceTimer: !!silenceTimerRef.current,
+      transcript: currentTranscriptRef.current
+    });
+  }, [isContinuousMode]);
 
   const playAudio = (base64Audio) => {
     try {
@@ -385,6 +529,31 @@ function App() {
     }
   };
 
+  // Manual reconnection function
+  const reconnectWebSocket = () => {
+    debugLog('websocket', 'Manual reconnection requested');
+    
+    // Reset connection attempt flag
+    connectionAttemptRef.current = false;
+    
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close(1000, 'Manual reconnection');
+      wsRef.current = null;
+    }
+    
+    // Reset states
+    setIsConnected(false);
+    setStatus('Reconnecting...');
+    
+    // Attempt new connection after a short delay
+    setTimeout(() => {
+      if (connectWebSocketRef.current) {
+        connectWebSocketRef.current();
+      }
+    }, 500);
+  };
+
   // Setup continuous speech recognition with silence detection
   const setupContinuousRecognition = async () => {
     try {
@@ -398,7 +567,10 @@ function App() {
         return;
       }
 
-      // Initialize speech recognition
+      // Setup audio level monitoring for silence detection FIRST
+      await setupSilenceDetector();
+      
+      // Initialize speech recognition AFTER audio monitoring is ready
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
@@ -406,15 +578,12 @@ function App() {
 
       // Handle speech results
       recognitionRef.current.onresult = (event) => {
-        let interim = '';
         let final = '';
         
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             final += transcript + ' ';
-          } else {
-            interim += transcript;
           }
         }
         
@@ -432,18 +601,26 @@ function App() {
       };
 
       recognitionRef.current.onend = () => {
-        if (isContinuousMode) {
-          debugLog('continuous', 'Recognition ended, restarting...');
+        debugLog('continuous', 'Recognition ended');
+        // Use ref for immediate state checking
+        if (isContinuousModeRef.current) {
+          debugLog('continuous', 'Restarting recognition for continuous mode');
           setTimeout(() => {
-            if (recognitionRef.current && isContinuousMode) {
-              recognitionRef.current.start();
+            if (recognitionRef.current && isContinuousModeRef.current) {
+              try {
+                recognitionRef.current.start();
+                debugLog('continuous', 'Recognition restarted successfully');
+              } catch (error) {
+                debugLog('error', 'Error restarting recognition', error);
+                // If restart fails, don't disable continuous mode automatically
+                // Let user manually stop it
+              }
             }
           }, 100);
+        } else {
+          debugLog('continuous', 'Recognition ended - continuous mode disabled');
         }
       };
-
-      // Setup audio level monitoring for silence detection
-      await setupSilenceDetector();
       
       // Start recognition
       recognitionRef.current.start();
@@ -470,12 +647,22 @@ function App() {
       
       streamRef.current = stream;
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Ensure audio context is running
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      
       const source = audioContextRef.current.createMediaStreamSource(stream);
       analyserRef.current = audioContextRef.current.createAnalyser();
       analyserRef.current.fftSize = 512;
       source.connect(analyserRef.current);
       
+      // Wait a moment for everything to be connected
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Start monitoring audio levels
+      debugLog('silence', 'Starting audio level monitoring');
       monitorAudioLevels();
       
       debugLog('silence', 'Silence detector setup complete');
@@ -486,12 +673,14 @@ function App() {
 
   // Monitor audio levels for silence detection
   const monitorAudioLevels = () => {
-    if (!analyserRef.current || !isContinuousMode) return;
-    
     const dataArray = new Uint8Array(analyserRef.current.fftSize);
     
     const checkAudioLevel = () => {
-      if (!analyserRef.current || !isContinuousMode) return;
+      // Check if continuous mode is still active and components are still mounted
+      if (!analyserRef.current || !isContinuousModeRef.current) {
+        debugLog('silence', `Audio monitoring stopped - continuous mode: ${isContinuousModeRef.current}, analyser: ${!!analyserRef.current}`);
+        return;
+      }
       
       analyserRef.current.getByteTimeDomainData(dataArray);
       
@@ -515,7 +704,10 @@ function App() {
         resetSilenceTimer();
       }
       
-      requestAnimationFrame(checkAudioLevel);
+      // Continue monitoring only if continuous mode is still active
+      if (isContinuousModeRef.current) {
+        requestAnimationFrame(checkAudioLevel);
+      }
     };
     
     checkAudioLevel();
@@ -523,11 +715,25 @@ function App() {
 
   // Reset silence timer (called when audio is detected)
   const resetSilenceTimer = () => {
+    // Use ref for immediate state checking
+    if (!isContinuousModeRef.current) {
+      debugLog('silence', `Silence timer reset ignored - continuous mode: ${isContinuousModeRef.current}`);
+      return;
+    }
+    
+    debugLog('silence', 'Resetting silence timer');
+    
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
     }
     
     silenceTimerRef.current = setTimeout(() => {
+      // Double-check continuous mode is still active when timer fires
+      if (!isContinuousModeRef.current) {
+        debugLog('silence', 'Silence timer fired but continuous mode is inactive');
+        return;
+      }
+      
       if (currentTranscriptRef.current.trim() !== '') {
         debugLog('silence', '3-second silence detected, processing transcript', {
           transcript: currentTranscriptRef.current.trim()
@@ -545,6 +751,12 @@ function App() {
   // Process transcript segment and generate AI response
   const processTranscriptSegment = async (transcript) => {
     try {
+      // Ensure continuous mode is still active using ref
+      if (!isContinuousModeRef.current) {
+        debugLog('segment', 'Transcript processing cancelled - continuous mode inactive');
+        return;
+      }
+      
       debugLog('segment', 'Processing transcript segment', { transcript });
       
       // Detect emotion
@@ -608,40 +820,88 @@ function App() {
 
   // Toggle continuous mode
   const toggleContinuousMode = async () => {
+    debugLog('continuous', `Toggle continuous mode called - current state: ${isContinuousMode}`);
+    
     if (isContinuousMode) {
       // Stop continuous mode
       debugLog('continuous', 'Stopping continuous mode');
       setIsContinuousMode(false);
+      isContinuousModeRef.current = false;
       setStatus('Continuous mode stopped');
+      setAudioLevel(0);
       
       // Stop recognition
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+          debugLog('continuous', 'Speech recognition stopped');
+        } catch (error) {
+          debugLog('error', 'Error stopping speech recognition', error);
+        }
       }
       
       // Clear silence timer
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+        debugLog('continuous', 'Silence timer cleared');
       }
       
       // Stop audio stream
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current.getTracks().forEach(track => {
+          track.stop();
+          debugLog('continuous', `Stopped audio track: ${track.label}`);
+        });
+        streamRef.current = null;
       }
       
       // Close audio context
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        try {
+          await audioContextRef.current.close();
+          debugLog('continuous', 'Audio context closed');
+        } catch (error) {
+          debugLog('error', 'Error closing audio context', error);
+        }
+        audioContextRef.current = null;
       }
+      
+      // Clear current transcript
+      currentTranscriptRef.current = '';
       
     } else {
       // Start continuous mode
       debugLog('continuous', 'Starting continuous mode');
+      
+      // Ensure we have a stable WebSocket connection
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        debugLog('error', `Cannot start continuous mode - WebSocket state: ${wsRef.current?.readyState || 'null'}`);
+        setStatus('Error: Not connected to server - Check connection');
+        return;
+      }
+      
+      // Set state AND ref immediately
       setIsContinuousMode(true);
+      isContinuousModeRef.current = true;
       setStatus('Continuous mode active - Speak naturally, I\'ll respond after 3 seconds of silence');
       currentTranscriptRef.current = '';
       
-      await setupContinuousRecognition();
+      // Give React a moment to update the state
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      try {
+        await setupContinuousRecognition();
+        
+        // Start an initial silence timer to catch the first period of silence
+        resetSilenceTimer();
+        
+        debugLog('continuous', 'Continuous mode setup completed successfully');
+      } catch (error) {
+        debugLog('error', 'Error setting up continuous mode', error);
+        setIsContinuousMode(false);
+        setStatus('Error setting up continuous mode');
+      }
     }
   };
 
@@ -833,6 +1093,23 @@ function App() {
         
         <StatusIndicator>
           Status: {status} {isConnected ? '🟢' : '🔴'}
+          {!isConnected && (
+            <button 
+              onClick={reconnectWebSocket}
+              style={{
+                marginLeft: '10px',
+                padding: '4px 8px',
+                background: '#4ecdc4',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '0.8rem'
+              }}
+            >
+              Retry
+            </button>
+          )}
         </StatusIndicator>
         
         <ContinuousModeButton 
@@ -921,6 +1198,7 @@ function App() {
         }}>
           <strong>🐛 Debug Info</strong>
           <div>Connection: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}</div>
+          <div>WebSocket State: {wsRef.current ? wsRef.current.readyState : 'null'}</div>
           <div>Recording: {isRecording ? '🎤 Recording' : '⏹️ Stopped'}</div>
           <div>Continuous: {isContinuousMode ? '🔄 Active' : '⏸️ Inactive'}</div>
           <div>Processing: {isProcessing ? '⏳ Processing' : '✅ Ready'}</div>
