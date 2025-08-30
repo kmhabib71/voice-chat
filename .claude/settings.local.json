@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/mnt/c/Users/WALTON/Desktop/MouseWithoutBorders/ai-companion-tested-2/ai-companion-tested/**)",
+      "Bash(chmod:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
