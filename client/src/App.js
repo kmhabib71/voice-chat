@@ -202,6 +202,53 @@ const SendButton = styled.button`
   }
 `;
 
+const ContinuousModeButton = styled.button.withConfig({
+  shouldForwardProp: (prop) => !['isActive'].includes(prop)
+})`
+  padding: 12px 24px;
+  background: ${props => props.isActive 
+    ? 'linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%)' 
+    : 'linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%)'};
+  color: white;
+  border: none;
+  border-radius: 25px;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`;
+
+const AudioLevelIndicator = styled.div.withConfig({
+  shouldForwardProp: (prop) => !['level', 'isContinuous'].includes(prop)
+})`
+  width: 200px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  margin-bottom: 15px;
+  overflow: hidden;
+  display: ${props => props.isContinuous ? 'block' : 'none'};
+  
+  &::after {
+    content: '';
+    display: block;
+    height: 100%;
+    width: ${props => Math.min(props.level * 100, 100)}%;
+    background: linear-gradient(90deg, #4ecdc4, #ff6b6b);
+    transition: width 0.1s ease;
+  }
+`;
+
 function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -211,11 +258,19 @@ function App() {
   const [textInput, setTextInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [debugInfo, setDebugInfo] = useState({});
+  const [isContinuousMode, setIsContinuousMode] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const wsRef = useRef(null);
   const audioRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const currentTranscriptRef = useRef('');
+  const streamRef = useRef(null);
 
   // Debug logging helper
   const debugLog = (category, message, data = null) => {
@@ -291,6 +346,23 @@ function App() {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      
+      // Cleanup continuous mode resources
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+      
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
     };
   }, []);
 
@@ -310,6 +382,266 @@ function App() {
       }
     } catch (error) {
       debugLog('error', 'Error creating audio blob', error);
+    }
+  };
+
+  // Setup continuous speech recognition with silence detection
+  const setupContinuousRecognition = async () => {
+    try {
+      debugLog('continuous', 'Setting up continuous speech recognition');
+      
+      // Check if Web Speech API is supported
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        debugLog('error', 'Web Speech API not supported');
+        setStatus('Speech recognition not supported in this browser');
+        return;
+      }
+
+      // Initialize speech recognition
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
+
+      // Handle speech results
+      recognitionRef.current.onresult = (event) => {
+        let interim = '';
+        let final = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            final += transcript + ' ';
+          } else {
+            interim += transcript;
+          }
+        }
+        
+        if (final) {
+          currentTranscriptRef.current += final;
+          debugLog('speech', 'Final transcript added', { final, total: currentTranscriptRef.current });
+        }
+        
+        // Reset silence timer when we hear something
+        resetSilenceTimer();
+      };
+
+      recognitionRef.current.onerror = (error) => {
+        debugLog('error', 'Speech recognition error', error);
+      };
+
+      recognitionRef.current.onend = () => {
+        if (isContinuousMode) {
+          debugLog('continuous', 'Recognition ended, restarting...');
+          setTimeout(() => {
+            if (recognitionRef.current && isContinuousMode) {
+              recognitionRef.current.start();
+            }
+          }, 100);
+        }
+      };
+
+      // Setup audio level monitoring for silence detection
+      await setupSilenceDetector();
+      
+      // Start recognition
+      recognitionRef.current.start();
+      debugLog('continuous', 'Speech recognition started');
+      
+    } catch (error) {
+      debugLog('error', 'Error setting up continuous recognition', error);
+      setStatus('Error setting up continuous recognition');
+    }
+  };
+
+  // Setup silence detector using audio analysis
+  const setupSilenceDetector = async () => {
+    try {
+      debugLog('silence', 'Setting up silence detector');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      
+      streamRef.current = stream;
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      analyserRef.current.fftSize = 512;
+      source.connect(analyserRef.current);
+      
+      // Start monitoring audio levels
+      monitorAudioLevels();
+      
+      debugLog('silence', 'Silence detector setup complete');
+    } catch (error) {
+      debugLog('error', 'Error setting up silence detector', error);
+    }
+  };
+
+  // Monitor audio levels for silence detection
+  const monitorAudioLevels = () => {
+    if (!analyserRef.current || !isContinuousMode) return;
+    
+    const dataArray = new Uint8Array(analyserRef.current.fftSize);
+    
+    const checkAudioLevel = () => {
+      if (!analyserRef.current || !isContinuousMode) return;
+      
+      analyserRef.current.getByteTimeDomainData(dataArray);
+      
+      // Calculate RMS (Root Mean Square) for audio level
+      let rms = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const val = (dataArray[i] - 128) / 128.0;
+        rms += val * val;
+      }
+      rms = Math.sqrt(rms / dataArray.length);
+      
+      // Update audio level for visual feedback
+      setAudioLevel(rms);
+      
+      // If volume below threshold => silence detected
+      const silenceThreshold = 0.01;
+      if (rms < silenceThreshold) {
+        // Silence is being handled by the timer, no need to do anything here
+      } else {
+        // Audio detected, reset silence timer
+        resetSilenceTimer();
+      }
+      
+      requestAnimationFrame(checkAudioLevel);
+    };
+    
+    checkAudioLevel();
+  };
+
+  // Reset silence timer (called when audio is detected)
+  const resetSilenceTimer = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
+    
+    silenceTimerRef.current = setTimeout(() => {
+      if (currentTranscriptRef.current.trim() !== '') {
+        debugLog('silence', '3-second silence detected, processing transcript', {
+          transcript: currentTranscriptRef.current.trim()
+        });
+        
+        // Process the accumulated transcript
+        processTranscriptSegment(currentTranscriptRef.current.trim());
+        
+        // Clear the current transcript
+        currentTranscriptRef.current = '';
+      }
+    }, 3000); // 3 seconds of silence
+  };
+
+  // Process transcript segment and generate AI response
+  const processTranscriptSegment = async (transcript) => {
+    try {
+      debugLog('segment', 'Processing transcript segment', { transcript });
+      
+      // Detect emotion
+      const emotion = detectEmotionFromText(transcript);
+      
+      // Add user message to chat
+      const userMessage = {
+        text: transcript,
+        isUser: true,
+        emotion: emotion,
+        timestamp: new Date().toISOString()
+      };
+      
+      setMessages(prev => [...prev, userMessage]);
+      debugLog('user_message', 'User message added from continuous mode', userMessage);
+      
+      // Send to WebSocket for AI response
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        const messageData = {
+          type: 'voice_message',
+          text: transcript,
+          emotion: emotion
+        };
+        debugLog('websocket', 'Sending continuous transcript to server', messageData);
+        wsRef.current.send(JSON.stringify(messageData));
+      } else {
+        debugLog('error', 'WebSocket not connected for continuous mode');
+      }
+      
+    } catch (error) {
+      debugLog('error', 'Error processing transcript segment', error);
+    }
+  };
+
+  // Simple emotion detection (can be enhanced)
+  const detectEmotionFromText = (text) => {
+    const emotions = {
+      joy: ['happy', 'excited', 'wonderful', 'amazing', 'great', 'fantastic', 'awesome', 'brilliant'],
+      sadness: ['sad', 'depressed', 'unhappy', 'down', 'miserable', 'upset', 'crying'],
+      anger: ['angry', 'mad', 'furious', 'annoyed', 'frustrated', 'irritated', 'hate'],
+      fear: ['scared', 'afraid', 'worried', 'anxious', 'nervous', 'terrified', 'panic'],
+      surprise: ['surprised', 'amazed', 'shocked', 'astonished', 'wow', 'incredible'],
+      love: ['love', 'adore', 'cherish', 'romantic', 'affection', 'heart', 'caring'],
+      neutral: ['okay', 'fine', 'normal', 'regular', 'standard', 'average']
+    };
+
+    const textLower = text.toLowerCase();
+    let detectedEmotion = 'neutral';
+    let maxMatches = 0;
+
+    for (const [emotion, keywords] of Object.entries(emotions)) {
+      const matches = keywords.filter(keyword => textLower.includes(keyword)).length;
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        detectedEmotion = emotion;
+      }
+    }
+
+    return detectedEmotion;
+  };
+
+  // Toggle continuous mode
+  const toggleContinuousMode = async () => {
+    if (isContinuousMode) {
+      // Stop continuous mode
+      debugLog('continuous', 'Stopping continuous mode');
+      setIsContinuousMode(false);
+      setStatus('Continuous mode stopped');
+      
+      // Stop recognition
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      
+      // Clear silence timer
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+      
+      // Stop audio stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      
+      // Close audio context
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      
+    } else {
+      // Start continuous mode
+      debugLog('continuous', 'Starting continuous mode');
+      setIsContinuousMode(true);
+      setStatus('Continuous mode active - Speak naturally, I\'ll respond after 3 seconds of silence');
+      currentTranscriptRef.current = '';
+      
+      await setupContinuousRecognition();
     }
   };
 
@@ -462,11 +794,17 @@ function App() {
   };
 
   const handleVoiceButtonClick = () => {
-    if (isRecording) {
+    if (isContinuousMode) {
+      toggleContinuousMode();
+    } else if (isRecording) {
       stopRecording();
     } else {
       startRecording();
     }
+  };
+
+  const handleContinuousModeToggle = () => {
+    toggleContinuousMode();
   };
 
   const getEmotionEmoji = (emotion) => {
@@ -497,6 +835,19 @@ function App() {
           Status: {status} {isConnected ? '🟢' : '🔴'}
         </StatusIndicator>
         
+        <ContinuousModeButton 
+          onClick={handleContinuousModeToggle}
+          isActive={isContinuousMode}
+          disabled={!isConnected || isProcessing}
+        >
+          {isContinuousMode ? '🛑 Stop Continuous Mode' : '🔄 Start Continuous Mode'}
+        </ContinuousModeButton>
+        
+        <AudioLevelIndicator 
+          level={audioLevel} 
+          isContinuous={isContinuousMode}
+        />
+        
         <WaveformContainer>
           {[...Array(8)].map((_, i) => (
             <WaveBar 
@@ -509,11 +860,11 @@ function App() {
         
         <VoiceButton
           onClick={handleVoiceButtonClick}
-          isRecording={isRecording}
+          isRecording={isRecording || isContinuousMode}
           emotion={currentEmotion}
           disabled={!isConnected || isProcessing}
         >
-          {isRecording ? '🛑' : '🎤'}
+          {isContinuousMode ? '🎙️' : (isRecording ? '🛑' : '🎤')}
         </VoiceButton>
         
         <ChatContainer>
@@ -571,7 +922,9 @@ function App() {
           <strong>🐛 Debug Info</strong>
           <div>Connection: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}</div>
           <div>Recording: {isRecording ? '🎤 Recording' : '⏹️ Stopped'}</div>
+          <div>Continuous: {isContinuousMode ? '🔄 Active' : '⏸️ Inactive'}</div>
           <div>Processing: {isProcessing ? '⏳ Processing' : '✅ Ready'}</div>
+          <div>Audio Level: {(audioLevel * 100).toFixed(1)}%</div>
           <div>Emotion: {currentEmotion}</div>
           <div>Status: {status}</div>
           <div style={{ marginTop: '10px' }}>

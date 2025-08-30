@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Voice to Text with Silence Detection</title>
+    <script defer>
+      window.onload = async () => {
+        const output = document.getElementById('output');
+        const chunks = [];
+        let silenceTimer = null;
+
+        // --- Speech Recognition (Web Speech API) ---
+        const SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true; // keep listening
+        recognition.interimResults = true; // show partial results
+        recognition.lang = 'en-US';
+
+        let currentTranscript = '';
+
+        recognition.onresult = event => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              currentTranscript += transcript + ' ';
+            } else {
+              interim += transcript;
+            }
+          }
+
+          // Reset silence timer when we hear something
+          resetSilenceTimer();
+        };
+
+        recognition.onerror = e => {
+          console.error('Recognition error:', e);
+        };
+
+        recognition.onend = () => {
+          recognition.start(); // auto-restart
+        };
+
+        recognition.start();
+
+        // --- Silence Detection ---
+        async function setupSilenceDetector() {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          const audioCtx = new (window.AudioContext ||
+            window.webkitAudioContext)();
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.fftSize);
+          function checkSilence() {
+            analyser.getByteTimeDomainData(dataArray);
+            let rms = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              const val = (dataArray[i] - 128) / 128.0;
+              rms += val * val;
+            }
+            rms = Math.sqrt(rms / dataArray.length);
+
+            // If volume < threshold => silence
+            if (rms < 0.01) {
+              // silence detected
+            } else {
+              resetSilenceTimer();
+            }
+
+            requestAnimationFrame(checkSilence);
+          }
+          checkSilence();
+        }
+        setupSilenceDetector();
+
+        function resetSilenceTimer() {
+          if (silenceTimer) clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => {
+            if (currentTranscript.trim() !== '') {
+              chunks.push(currentTranscript.trim());
+              const p = document.createElement('p');
+              p.textContent = currentTranscript.trim();
+              output.appendChild(p);
+              currentTranscript = '';
+            }
+          }, 3000); // 3 seconds silence
+        }
+      };
+    </script>
+  </head>
+  <body
+    class="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-6"
+  >
+    <h1 class="text-2xl font-bold mb-4">🎙️ Voice to Text (3s Silence Split)</h1>
+    <div
+      id="output"
+      class="w-full max-w-xl space-y-2 p-4 bg-gray-800 rounded-lg shadow-lg"
+    ></div>
+  </body>
+</html>
