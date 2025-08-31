@@ -265,12 +265,22 @@ async function textToSpeech(text, emotion = 'neutral') {
       throw new Error('Empty text provided for TTS');
     }
     
-    // Truncate text aggressively for faster generation
-    const maxLength = 200; // Reduced from 500 to 200 for faster TTS
-    const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    // Clean text for TTS - remove markdown and extend length limit
+    let cleanedText = text
+      .replace(/\*\*/g, '') // Remove bold markdown
+      .replace(/\*/g, '') // Remove asterisks  
+      .replace(/#{1,6}\s/g, '') // Remove headers
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Convert links to text
+      .replace(/`([^`]+)`/g, '$1') // Remove code backticks
+      .trim();
+    
+    // Allow longer text for better complete message coverage
+    const maxLength = 800; // Increased from 200 to 800 for fuller messages
+    const processedText = cleanedText.length > maxLength ? cleanedText.substring(0, maxLength) + '...' : cleanedText;
     
     debugLog('audio', 'ElevenLabs TTS request', { 
-      textLength: truncatedText.length, 
+      originalLength: text.length,
+      processedLength: processedText.length, 
       emotion,
       rateLimit: 'applied'
     });
@@ -291,7 +301,7 @@ async function textToSpeech(text, emotion = 'neutral') {
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
       {
-        text: truncatedText,
+        text: processedText,
         model_id: 'eleven_turbo_v2', // Fastest model for speed
         voice_settings: {
           stability: 0.5, // Lower values for faster generation
