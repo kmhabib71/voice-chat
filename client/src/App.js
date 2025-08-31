@@ -19,6 +19,7 @@ function App() {
   const [recognitionRestartCount, setRecognitionRestartCount] = useState(0);
   const [lastRecognitionError, setLastRecognitionError] = useState(null);
   const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const recognitionRestartCountRef = useRef(0);
   const recognitionRestartTimeoutRef = useRef(null);
   
@@ -367,6 +368,23 @@ function App() {
         audioRef.current.preload = 'auto';
         audioRef.current.src = audioUrl;
         
+        // Set up event listeners for audio state tracking
+        audioRef.current.onplay = () => {
+          setIsAudioPlaying(true);
+          debugLog('audio', 'Audio playback started - speech detection active');
+        };
+        
+        audioRef.current.onpause = () => {
+          setIsAudioPlaying(false);
+          debugLog('audio', 'Audio playback paused by user speech');
+        };
+        
+        audioRef.current.onended = () => {
+          setIsAudioPlaying(false);
+          URL.revokeObjectURL(audioUrl);
+          debugLog('audio', 'Audio playback ended naturally');
+        };
+        
         // Load and play as soon as possible
         const playPromise = audioRef.current.play();
         
@@ -378,19 +396,16 @@ function App() {
             })
             .catch(error => {
               debugLog('error', 'Audio playback failed', error);
+              setIsAudioPlaying(false);
               // Fallback: try again after a short delay
               setTimeout(() => {
-                audioRef.current?.play().catch(e => 
-                  debugLog('error', 'Audio playback retry failed', e)
-                );
+                audioRef.current?.play().catch(e => {
+                  debugLog('error', 'Audio playback retry failed', e);
+                  setIsAudioPlaying(false);
+                });
               }, 100);
             });
         }
-        
-        // Clean up URL after playback to free memory
-        audioRef.current.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-        };
       }
     } catch (error) {
       debugLog('error', 'Error in optimized audio playback', error);
@@ -724,11 +739,20 @@ function App() {
       
       // If volume below threshold => silence detected
       const silenceThreshold = 0.01;
+      const speechThreshold = 0.02; // Threshold for detecting user speech
+      
       if (rms < silenceThreshold) {
         // Silence is being handled by the timer, no need to do anything here
       } else {
         // Audio detected, reset silence timer
         resetSilenceTimer();
+        
+        // If user is speaking while AI audio is playing, pause the audio
+        if (rms > speechThreshold && isAudioPlaying && audioRef.current) {
+          debugLog('speech_interrupt', 'User speech detected during AI audio - pausing playback', { audioLevel: rms });
+          audioRef.current.pause();
+          setIsAudioPlaying(false);
+        }
       }
       
       // Continue monitoring only if continuous mode is still active
@@ -951,6 +975,13 @@ function App() {
         return;
       }
       
+      // Stop any playing audio when user starts continuous mode
+      if (isAudioPlaying && audioRef.current) {
+        debugLog('speech_interrupt', 'Stopping AI audio due to continuous mode activation');
+        audioRef.current.pause();
+        setIsAudioPlaying(false);
+      }
+      
       // Set state AND ref immediately
       setIsContinuousMode(true);
       isContinuousModeRef.current = true;
@@ -978,6 +1009,13 @@ function App() {
   const startRecording = async () => {
     try {
       debugLog('microphone', 'Requesting microphone access');
+      
+      // Stop any playing audio when user starts recording
+      if (isAudioPlaying && audioRef.current) {
+        debugLog('speech_interrupt', 'Stopping AI audio due to user recording');
+        audioRef.current.pause();
+        setIsAudioPlaying(false);
+      }
       
       // Get available audio devices
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -1356,6 +1394,7 @@ function App() {
         <div>Recording: {isRecording ? '🎤 Recording' : '⏹️ Stopped'}</div>
         <div>Continuous: {isContinuousMode ? '🔄 Active' : '⏸️ Inactive'}</div>
         <div>AI Status: {isAIResponding ? '⏳ Thinking' : '✅ Ready'}</div>
+        <div>Audio Playing: {isAudioPlaying ? '🔊 Playing' : '🔇 Silent'}</div>
         <div>Audio Level: {(audioLevel * 100).toFixed(1)}%</div>
         <div>Emotion: {currentEmotion}</div>
         <div>Last Speech: {Math.round((Date.now() - lastSpeechTime) / 1000)}s ago</div>
