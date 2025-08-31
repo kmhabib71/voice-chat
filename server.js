@@ -60,8 +60,141 @@ function detectEmotionFromText(text) {
   return detectedEmotion;
 }
 
+// Keyword extraction using OpenAI
+async function extractKeywords(text, context = []) {
+  try {
+    const contextKeywords = context.length > 0 ? 
+      `Previous conversation topics: ${context.join(', ')}.` : '';
+    
+    const systemPrompt = `Extract key information from user messages in JSON format. ${contextKeywords}
+    
+Extract:
+- entities: people, places, things, brands (max 5)
+- topics: main subjects/themes (max 4)  
+- intents: user intentions (question/request/statement/greeting) (max 3)
+- emotions: emotional indicators (max 3)
+- context: situational markers (technical/personal/urgent/casual) (max 3)
+
+Return only valid JSON object with arrays.`;
+
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text }
+      ],
+      max_tokens: 150,
+      temperature: 0.3,
+      stream: false
+    });
+
+    try {
+      const keywords = JSON.parse(completion.choices[0].message.content);
+      return {
+        entities: keywords.entities || [],
+        topics: keywords.topics || [],
+        intents: keywords.intents || [],
+        emotions: keywords.emotions || [],
+        context: keywords.context || []
+      };
+    } catch (parseError) {
+      debugLog('keywords', 'Failed to parse keyword JSON, using fallback', parseError.message);
+      return {
+        entities: [],
+        topics: [text.split(' ').slice(0, 3).join(' ')],
+        intents: ['statement'],
+        emotions: [emotion],
+        context: ['general']
+      };
+    }
+  } catch (error) {
+    debugLog('error', 'Keyword extraction failed', error.message);
+    return {
+      entities: [],
+      topics: [],
+      intents: ['statement'],
+      emotions: [emotion],
+      context: ['general']
+    };
+  }
+}
+
+// Build efficient context for AI from conversation memory
+function buildContextFromMemory(userQuery, memoryData) {
+  if (!memoryData || !memoryData.keywords) {
+    debugLog('context', 'No memory data provided or missing keywords', { hasMemoryData: !!memoryData });
+    return { contextPrompt: '', relevantKeywords: {} };
+  }
+
+  debugLog('context', 'Processing memory data', {
+    hasKeywords: !!memoryData.keywords,
+    hasSession: !!memoryData.session,
+    hasRecentMessages: !!memoryData.recentMessages,
+    keywordCategories: Object.keys(memoryData.keywords),
+    messageCount: memoryData.session?.messageCount
+  });
+
+  const { keywords, recentMessages, recentContext, session } = memoryData;
+  // Support both recentMessages (client format) and recentContext (legacy)
+  const recentData = recentMessages || recentContext || [];
+  
+  // Get top keywords by frequency (limited for token efficiency)
+  const topEntities = Object.entries(keywords.entities || {})
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 3)
+    .map(([key]) => key);
+    
+  const topTopics = Object.entries(keywords.topics || {})
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 3)
+    .map(([key]) => key);
+    
+  const dominantIntents = Object.entries(keywords.intents || {})
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 2)
+    .map(([key]) => key);
+
+  // Build compact context prompt
+  let contextPrompt = '';
+  
+  if (topTopics.length > 0) {
+    contextPrompt += `User often discusses: ${topTopics.join(', ')}. `;
+  }
+  
+  if (topEntities.length > 0) {
+    contextPrompt += `Key entities: ${topEntities.join(', ')}. `;
+  }
+  
+  if (session && session.conversationTone) {
+    contextPrompt += `Conversation tone: ${session.conversationTone}. `;
+  }
+  
+  if (recentData && recentData.length > 0) {
+    const recentMessageTexts = recentData.slice(-3).map(msg => 
+      `"${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}"`
+    ).join(', ');
+    contextPrompt += `Recent context: ${recentMessageTexts}. `;
+  }
+  
+  debugLog('context', 'Built context from memory', {
+    promptLength: contextPrompt.length,
+    topicsUsed: topTopics,
+    entitiesUsed: topEntities,
+    conversationTone: session?.conversationTone
+  });
+  
+  return {
+    contextPrompt: contextPrompt.trim(),
+    relevantKeywords: {
+      entities: topEntities,
+      topics: topTopics,
+      intents: dominantIntents
+    }
+  };
+}
+
 // Generate AI response with emotional context
-async function generateEmotionalResponse(userMessage, emotion) {
+async function generateEmotionalResponse(userMessage, emotion, conversationMemory = null) {
   try {
     const emotionalContext = {
       joy: "Respond with enthusiasm and positive energy",
@@ -73,7 +206,24 @@ async function generateEmotionalResponse(userMessage, emotion) {
       neutral: "Respond naturally and helpfully"
     };
 
-    const systemPrompt = `You are an empathetic AI assistant. The user seems to be feeling ${emotion}. ${emotionalContext[emotion]}. Keep your response concise but emotionally appropriate.`;
+    // Build context-aware system prompt
+    let systemPrompt = `You are an empathetic AI assistant. The user seems to be feeling ${emotion}. ${emotionalContext[emotion]}. Keep your response concise but emotionally appropriate.`;
+    
+    // Add conversation memory context if available
+    if (conversationMemory) {
+      const { contextPrompt } = buildContextFromMemory(userMessage, conversationMemory);
+      if (contextPrompt) {
+        systemPrompt += ` Context: ${contextPrompt}`;
+        debugLog('ai_response', 'Using context in system prompt', { 
+          contextLength: contextPrompt.length,
+          context: contextPrompt.substring(0, 100) + '...' 
+        });
+      } else {
+        debugLog('ai_response', 'No context prompt generated from memory');
+      }
+    } else {
+      debugLog('ai_response', 'No conversation memory provided');
+    }
 
     const completion = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
@@ -212,8 +362,16 @@ wss.on('connection', (ws) => {
           processing: true
         };
         
-        // Generate AI response asynchronously
-        const aiResponsePromise = generateEmotionalResponse(data.text, emotion);
+        // Generate AI response asynchronously (with optional memory context)
+        const conversationMemory = data.conversationMemory || null;
+        if (conversationMemory) {
+          debugLog('memory', '🧠 Using conversation memory for AI response', {
+            dominantTopics: conversationMemory.session?.dominantTopics || [],
+            messageCount: conversationMemory.session?.messageCount || 0,
+            conversationTone: conversationMemory.session?.conversationTone || 'neutral'
+          });
+        }
+        const aiResponsePromise = generateEmotionalResponse(data.text, emotion, conversationMemory);
         
         // Get AI response and send complete message
         const aiResponse = await aiResponsePromise;
@@ -280,14 +438,14 @@ wss.on('connection', (ws) => {
 // REST API Routes
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, conversationMemory = null } = req.body;
     
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
     const emotion = detectEmotionFromText(message);
-    const aiResponse = await generateEmotionalResponse(message, emotion);
+    const aiResponse = await generateEmotionalResponse(message, emotion, conversationMemory);
 
     res.json({
       response: aiResponse,
@@ -365,6 +523,61 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       stack: error.stack
     });
     res.status(500).json({ error: 'Could not transcribe audio: ' + error.message });
+  }
+});
+
+// Keyword extraction endpoint
+app.post('/api/extract-keywords', async (req, res) => {
+  try {
+    const { text, context = [] } = req.body;
+    
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    debugLog('keywords', 'Extracting keywords', { textLength: text.length, contextCount: context.length });
+    
+    const keywords = await extractKeywords(text, context);
+    
+    debugLog('keywords', 'Keywords extracted', { 
+      entities: keywords.entities.length,
+      topics: keywords.topics.length,
+      intents: keywords.intents.length
+    });
+    
+    res.json({
+      keywords,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    debugLog('error', 'Keyword extraction API error', error.message);
+    res.status(500).json({ error: 'Could not extract keywords' });
+  }
+});
+
+// Build context from memory endpoint
+app.post('/api/build-context', async (req, res) => {
+  try {
+    const { userQuery, memoryData } = req.body;
+    
+    if (!userQuery) {
+      return res.status(400).json({ error: 'User query is required' });
+    }
+
+    const contextResult = buildContextFromMemory(userQuery, memoryData);
+    
+    debugLog('context', 'Context built from memory', { 
+      promptLength: contextResult.contextPrompt.length,
+      relevantKeywords: Object.keys(contextResult.relevantKeywords).length
+    });
+    
+    res.json({
+      ...contextResult,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    debugLog('error', 'Context building API error', error.message);
+    res.status(500).json({ error: 'Could not build context from memory' });
   }
 });
 

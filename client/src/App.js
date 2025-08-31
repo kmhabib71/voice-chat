@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
+import ConversationMemory from './utils/conversationMemory';
 
 
 function App() {
@@ -35,6 +36,10 @@ function App() {
   const connectionAttemptRef = useRef(false); // Prevent duplicate connections
   const connectWebSocketRef = useRef(null); // Store connection function
   const chatContainerRef = useRef(null); // Reference to chat container for scrolling
+  
+  // Conversation Memory System (non-intrusive)
+  const conversationMemoryRef = useRef(null);
+  const [memoryStats, setMemoryStats] = useState(null);
 
   // Debug logging helper
   const debugLog = (category, message, data = null) => {
@@ -47,6 +52,42 @@ function App() {
       [category]: [...(prev[category] || []), logEntry].slice(-5) // Keep last 5 entries
     }));
   };
+
+  // Initialize Conversation Memory System
+  useEffect(() => {
+    try {
+      conversationMemoryRef.current = new ConversationMemory();
+      setMemoryStats(conversationMemoryRef.current.getMemoryStats());
+      debugLog('memory', 'Conversation memory system initialized', conversationMemoryRef.current.getMemoryStats());
+      
+      // Make memory available for debugging in browser console
+      window.debugMemory = () => {
+        if (conversationMemoryRef.current) {
+          const exported = conversationMemoryRef.current.exportMemory();
+          console.log('🧠 Current conversation memory:', exported);
+          console.log('📊 Memory stats:', conversationMemoryRef.current.getMemoryStats());
+          return exported;
+        } else {
+          console.log('❌ No conversation memory available');
+          return null;
+        }
+      };
+      
+      // Make memory clear function available for testing
+      window.clearMemory = () => {
+        if (conversationMemoryRef.current) {
+          conversationMemoryRef.current.clearMemory();
+          setMemoryStats(conversationMemoryRef.current.getMemoryStats());
+          console.log('🧹 Memory cleared');
+        } else {
+          console.log('❌ No conversation memory available');
+        }
+      };
+      
+    } catch (error) {
+      debugLog('error', 'Failed to initialize conversation memory', error.message);
+    }
+  }, []);
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -136,6 +177,20 @@ function App() {
                 timestamp: data.timestamp
               }]);
               setCurrentEmotion(data.emotion);
+              
+              // Process AI response through memory system (non-blocking)
+              if (conversationMemoryRef.current) {
+                conversationMemoryRef.current.processMessage(data.text, false, data.emotion)
+                  .then((result) => {
+                    if (result.memoryUpdated) {
+                      setMemoryStats(conversationMemoryRef.current.getMemoryStats());
+                      debugLog('memory', 'AI response processed in memory', result);
+                    }
+                  })
+                  .catch((error) => {
+                    debugLog('error', 'Memory processing failed for AI response', error.message);
+                  });
+              }
             } else if (data.type === 'audio_response') {
               debugLog('audio', 'Received audio response', {
                 audioLength: data.audio?.length || 0,
@@ -749,15 +804,41 @@ function App() {
       setMessages(prev => [...prev, userMessage]);
       debugLog('user_message', 'User message added from continuous mode', userMessage);
       
+      // Process user message through memory system (non-blocking)
+      if (conversationMemoryRef.current) {
+        conversationMemoryRef.current.processMessage(transcript, true, emotion)
+          .then((result) => {
+            if (result.memoryUpdated) {
+              setMemoryStats(conversationMemoryRef.current.getMemoryStats());
+              debugLog('memory', 'User message processed in memory', result);
+            }
+          })
+          .catch((error) => {
+            debugLog('error', 'Memory processing failed for user message', error.message);
+          });
+      }
+      
       // Send to WebSocket for AI response with optimized payload
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        // Build conversation memory context
+        let conversationMemory = null;
+        if (conversationMemoryRef.current) {
+          const memoryExport = conversationMemoryRef.current.exportMemory();
+          conversationMemory = memoryExport;
+        }
+        
         const messageData = {
           type: 'voice_message',
           text: transcript,
           emotion: emotion,
-          timestamp: Date.now() // Add timestamp for latency tracking
+          timestamp: Date.now(), // Add timestamp for latency tracking
+          conversationMemory: conversationMemory // Include memory context
         };
-        debugLog('websocket', 'Sending continuous transcript to server', { text: transcript, emotion });
+        debugLog('websocket', 'Sending continuous transcript with memory to server', { 
+          text: transcript, 
+          emotion,
+          memoryTopics: conversationMemory?.session?.dominantTopics || []
+        });
         wsRef.current.send(JSON.stringify(messageData));
       } else {
         debugLog('error', 'WebSocket not connected for continuous mode');
@@ -990,14 +1071,40 @@ function App() {
       setMessages(prev => [...prev, userMessage]);
       debugLog('user_message', 'User message added', userMessage);
       
+      // Process transcribed user message through memory system (non-blocking)
+      if (conversationMemoryRef.current) {
+        conversationMemoryRef.current.processMessage(transcription.text, true, transcription.emotion)
+          .then((result) => {
+            if (result.memoryUpdated) {
+              setMemoryStats(conversationMemoryRef.current.getMemoryStats());
+              debugLog('memory', 'Transcribed message processed in memory', result);
+            }
+          })
+          .catch((error) => {
+            debugLog('error', 'Memory processing failed for transcribed message', error.message);
+          });
+      }
+      
       // Send to WebSocket for AI response
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        // Build conversation memory context
+        let conversationMemory = null;
+        if (conversationMemoryRef.current) {
+          const memoryExport = conversationMemoryRef.current.exportMemory();
+          conversationMemory = memoryExport;
+        }
+        
         const messageData = {
           type: 'voice_message',
           text: transcription.text,
-          emotion: transcription.emotion
+          emotion: transcription.emotion,
+          conversationMemory: conversationMemory // Include memory context
         };
-        debugLog('websocket', 'Sending message to server', messageData);
+        debugLog('websocket', 'Sending transcribed message with memory to server', {
+          text: transcription.text,
+          emotion: transcription.emotion,
+          memoryTopics: conversationMemory?.session?.dominantTopics || []
+        });
         wsRef.current.send(JSON.stringify(messageData));
       } else {
         debugLog('error', 'WebSocket not connected', { readyState: wsRef.current?.readyState });
@@ -1061,12 +1168,37 @@ function App() {
     setMessages(prev => [...prev, userMessage]);
     debugLog('text_message', 'Text message sent', userMessage);
     
+    // Process text message through memory system (non-blocking)
+    if (conversationMemoryRef.current) {
+      conversationMemoryRef.current.processMessage(textInput, true, 'neutral')
+        .then((result) => {
+          if (result.memoryUpdated) {
+            setMemoryStats(conversationMemoryRef.current.getMemoryStats());
+            debugLog('memory', 'Text message processed in memory', result);
+          }
+        })
+        .catch((error) => {
+          debugLog('error', 'Memory processing failed for text message', error.message);
+        });
+    }
+    
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Build conversation memory context
+      let conversationMemory = null;
+      if (conversationMemoryRef.current) {
+        const memoryExport = conversationMemoryRef.current.exportMemory();
+        conversationMemory = memoryExport;
+      }
+      
       const messageData = {
         type: 'voice_message',
-        text: textInput
+        text: textInput,
+        conversationMemory: conversationMemory // Include memory context
       };
-      debugLog('websocket', 'Sending text message to server', messageData);
+      debugLog('websocket', 'Sending text message with memory to server', {
+        text: textInput,
+        memoryTopics: conversationMemory?.session?.dominantTopics || []
+      });
       wsRef.current.send(JSON.stringify(messageData));
     } else {
       debugLog('error', 'Cannot send text message - WebSocket not connected');
@@ -1232,6 +1364,22 @@ function App() {
           <div className="error-text">Last Error: {lastRecognitionError}</div>
         )}
         <div>Status: {status}</div>
+        {memoryStats && (
+          <div style={{ marginTop: '8px', borderTop: '1px solid #333', paddingTop: '8px' }}>
+            <strong>🧠 Memory System:</strong>
+            <div style={{ fontSize: '10px', opacity: 0.9 }}>
+              Messages: {memoryStats.messageCount} | Topics: {memoryStats.keywordStats.topics || 0} | Entities: {memoryStats.keywordStats.entities || 0}
+            </div>
+            <div style={{ fontSize: '10px', opacity: 0.9 }}>
+              Tone: {memoryStats.conversationTone} | Session: {Math.round(memoryStats.sessionDuration / 60000)}m
+            </div>
+            {memoryStats.dominantTopics && memoryStats.dominantTopics.length > 0 && (
+              <div style={{ fontSize: '10px', opacity: 0.8 }}>
+                Top Topics: {memoryStats.dominantTopics.slice(0, 3).join(', ')}
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ marginTop: '10px' }}>
           <strong>Recent Logs:</strong>
           {Object.entries(debugInfo).slice(-3).map(([category, logs]) => 
