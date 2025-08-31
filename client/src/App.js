@@ -306,6 +306,7 @@ function App() {
   const isContinuousModeRef = useRef(false); // Immediate state tracking
   const connectionAttemptRef = useRef(false); // Prevent duplicate connections
   const connectWebSocketRef = useRef(null); // Store connection function
+  const chatContainerRef = useRef(null); // Reference to chat container for scrolling
 
   // Debug logging helper
   const debugLog = (category, message, data = null) => {
@@ -552,6 +553,13 @@ function App() {
       transcript: currentTranscriptRef.current
     });
   }, [isContinuousMode]);
+
+  // Auto-scroll chat to bottom when messages change
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const playAudio = async (base64Audio) => {
     try {
@@ -1447,7 +1455,7 @@ function App() {
           {isContinuousMode ? '🎙️' : (isRecording ? '🛑' : '🎤')}
         </VoiceButton>
         
-        <ChatContainer>
+        <ChatContainer ref={chatContainerRef}>
           {messages.map((message, index) => (
             <Message key={index} isUser={message.isUser}>
               {message.isUser ? '👤 ' : '🤖 '}
