@@ -1,279 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import styled, { keyframes, createGlobalStyle } from 'styled-components';
 import axios from 'axios';
+import './App.css';
 
-const GlobalStyle = createGlobalStyle`
-  * {
-    box-sizing: border-box;
-  }
-  
-  body {
-    margin: 0;
-    padding: 0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-`;
-
-const pulse = keyframes`
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-`;
-
-const wave = keyframes`
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.5); }
-`;
-
-const Container = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 20px;
-  color: white;
-`;
-
-const Title = styled.h1`
-  font-size: 2.5rem;
-  margin-bottom: 10px;
-  text-align: center;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  background: linear-gradient(45deg, #fff, #f0f0f0);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-`;
-
-const Subtitle = styled.p`
-  font-size: 1.2rem;
-  margin-bottom: 40px;
-  text-align: center;
-  opacity: 0.9;
-`;
-
-const VoiceButton = styled.button.withConfig({
-  shouldForwardProp: (prop) => !['isRecording', 'emotion'].includes(prop)
-})`
-  width: 150px;
-  height: 150px;
-  border-radius: 50%;
-  border: none;
-  background: ${props => {
-    const colors = {
-      neutral: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      joy: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',
-      sadness: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
-      anger: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
-      fear: 'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)',
-      surprise: 'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)',
-      love: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)'
-    };
-    return colors[props.emotion] || colors.neutral;
-  }};
-  color: white;
-  font-size: 2rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-  animation: ${props => props.isRecording ? pulse : 'none'} 1s infinite;
-  margin-bottom: 30px;
-  
-  &:hover {
-    transform: scale(1.1);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-  }
-  
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-`;
-
-const ChatContainer = styled.div`
-  width: 100%;
-  max-width: 600px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 30px;
-  min-height: 300px;
-  max-height: 400px;
-  overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-`;
-
-const Message = styled.div.withConfig({
-  shouldForwardProp: (prop) => !['isUser'].includes(prop)
-})`
-  margin-bottom: 15px;
-  padding: 12px 16px;
-  border-radius: 18px;
-  max-width: 80%;
-  word-wrap: break-word;
-  
-  ${props => props.isUser ? `
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    margin-left: auto;
-    color: white;
-  ` : `
-    background: rgba(255, 255, 255, 0.9);
-    margin-right: auto;
-    color: #333;
-  `}
-`;
-
-const EmotionIndicator = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
-  font-size: 1.1rem;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 10px 20px;
-  border-radius: 25px;
-  backdrop-filter: blur(10px);
-`;
-
-const StatusIndicator = styled.div`
-  font-size: 0.9rem;
-  opacity: 0.8;
-  margin-bottom: 20px;
-  text-align: center;
-`;
-
-const WaveformContainer = styled.div`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 3px;
-  height: 40px;
-  margin-bottom: 20px;
-`;
-
-const WaveBar = styled.div.withConfig({
-  shouldForwardProp: (prop) => !['isActive', 'delay'].includes(prop)
-})`
-  width: 4px;
-  height: ${props => props.isActive ? '20px' : '8px'};
-  background: white;
-  border-radius: 2px;
-  animation: ${props => props.isActive ? wave : 'none'} 0.8s ease-in-out infinite;
-  animation-delay: ${props => props.delay}ms;
-  transition: height 0.3s ease;
-`;
-
-const TextInput = styled.input`
-  width: 100%;
-  max-width: 600px;
-  padding: 15px 20px;
-  border: none;
-  border-radius: 25px;
-  font-size: 1rem;
-  background: rgba(255, 255, 255, 0.9);
-  margin-bottom: 20px;
-  outline: none;
-  
-  &::placeholder {
-    color: #888;
-  }
-`;
-
-const SendButton = styled.button`
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 25px;
-  font-size: 1rem;
-  cursor: pointer;
-  margin-left: 10px;
-  
-  &:hover {
-    opacity: 0.9;
-  }
-  
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-`;
-
-const ContinuousModeButton = styled.button.withConfig({
-  shouldForwardProp: (prop) => !['isActive'].includes(prop)
-})`
-  padding: 12px 24px;
-  background: ${props => props.isActive 
-    ? 'linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%)' 
-    : 'linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%)'};
-  color: white;
-  border: none;
-  border-radius: 25px;
-  font-size: 1rem;
-  cursor: pointer;
-  margin-bottom: 20px;
-  transition: all 0.3s ease;
-  
-  &:hover {
-    opacity: 0.9;
-    transform: scale(1.05);
-  }
-  
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-`;
-
-const AudioLevelIndicator = styled.div.withConfig({
-  shouldForwardProp: (prop) => !['level', 'isContinuous'].includes(prop)
-})`
-  width: 200px;
-  height: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  margin-bottom: 15px;
-  overflow: hidden;
-  display: ${props => props.isContinuous ? 'block' : 'none'};
-  
-  &::after {
-    content: '';
-    display: block;
-    height: 100%;
-    width: ${props => Math.min(props.level * 100, 100)}%;
-    background: linear-gradient(90deg, #4ecdc4, #ff6b6b);
-    transition: width 0.1s ease;
-  }
-`;
-
-const TypingIndicator = styled.div.withConfig({
-  shouldForwardProp: (prop) => !['isVisible'].includes(prop)
-})`
-  display: ${props => props.isVisible ? 'flex' : 'none'};
-  align-items: center;
-  padding: 12px 16px;
-  margin-bottom: 15px;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 18px;
-  max-width: 80%;
-  color: #666;
-  font-style: italic;
-  
-  &::after {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #4ecdc4;
-    margin-left: 8px;
-    animation: ${pulse} 1s infinite;
-  }
-`;
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
@@ -1375,181 +1103,147 @@ function App() {
   };
 
   return (
-    <>
-      <GlobalStyle />
-      <Container>
-        <Title>Emotional Voice Assistant</Title>
-        <Subtitle>Talk to me and I'll respond with emotion!</Subtitle>
-        
-        <EmotionIndicator>
-          Current mood: {getEmotionEmoji(currentEmotion)} {currentEmotion}
-        </EmotionIndicator>
-        
-        <StatusIndicator>
-          Status: {status} {isConnected ? '🟢' : '🔴'}
-          {!isConnected && (
-            <button 
-              onClick={reconnectWebSocket}
-              style={{
-                marginLeft: '10px',
-                padding: '4px 8px',
-                background: '#4ecdc4',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.8rem'
-              }}
-            >
-              Retry
-            </button>
-          )}
-          {isContinuousMode && (lastRecognitionError || recognitionRestartCount > 3) && (
-            <button 
-              onClick={manualRestartRecognition}
-              style={{
-                marginLeft: '10px',
-                padding: '4px 8px',
-                background: '#ff6b6b',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.8rem'
-              }}
-            >
-              🔄 Fix Speech
-            </button>
-          )}
-        </StatusIndicator>
-        
-        <ContinuousModeButton 
-          onClick={handleContinuousModeToggle}
-          isActive={isContinuousMode}
-          disabled={!isConnected || isProcessing}
-        >
-          {isContinuousMode ? '🛑 Stop Continuous Mode' : '🔄 Start Continuous Mode'}
-        </ContinuousModeButton>
-        
-        <AudioLevelIndicator 
-          level={audioLevel} 
-          isContinuous={isContinuousMode}
-        />
-        
-        <WaveformContainer>
-          {[...Array(8)].map((_, i) => (
-            <WaveBar 
-              key={i} 
-              isActive={isRecording} 
-              delay={i * 100}
-            />
-          ))}
-        </WaveformContainer>
-        
-        <VoiceButton
-          onClick={handleVoiceButtonClick}
-          isRecording={isRecording || isContinuousMode}
-          emotion={currentEmotion}
-          disabled={!isConnected || isProcessing}
-        >
-          {isContinuousMode ? '🎙️' : (isRecording ? '🛑' : '🎤')}
-        </VoiceButton>
-        
-        <ChatContainer ref={chatContainerRef}>
-          {messages.map((message, index) => (
-            <Message key={index} isUser={message.isUser}>
-              {message.isUser ? '👤 ' : '🤖 '}
-              {message.text}
-              {message.emotion && !message.isUser && (
-                <span style={{ marginLeft: '10px' }}>
-                  {getEmotionEmoji(message.emotion)}
-                </span>
-              )}
-            </Message>
-          ))}
-          
-          <TypingIndicator isVisible={isAIResponding}>
-            🤖 AI is thinking...
-          </TypingIndicator>
-          
-          {messages.length === 0 && !isAIResponding && (
-            <div style={{ textAlign: 'center', opacity: 0.7, marginTop: '50px' }}>
-              Start a conversation by pressing the microphone button or typing below!
-            </div>
-          )}
-        </ChatContainer>
-        
-        <div style={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: '600px' }}>
-          <TextInput
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            placeholder="Or type your message here..."
-            onKeyPress={(e) => e.key === 'Enter' && sendTextMessage()}
-            disabled={!isConnected}
-          />
-          <SendButton 
-            onClick={sendTextMessage}
-            disabled={!textInput.trim() || !isConnected}
+    <div className="container">
+      <h1 className="title">Emotional Voice Assistant</h1>
+      <p className="subtitle">Talk to me and I'll respond with emotion!</p>
+      
+      <div className="emotion-indicator">
+        Current mood: {getEmotionEmoji(currentEmotion)} {currentEmotion}
+      </div>
+      
+      <div className="status-indicator">
+        Status: {status} {isConnected ? '🟢' : '🔴'}
+        {!isConnected && (
+          <button 
+            onClick={reconnectWebSocket}
+            className="retry-button"
           >
-            Send
-          </SendButton>
-        </div>
-        
-        <audio 
-          ref={audioRef} 
-          style={{ display: 'none' }}
-          preload="auto"
-          controls={false}
-          muted={false}
-          autoPlay={false}
-          crossOrigin="anonymous"
-          onLoadStart={() => debugLog('audio', 'Audio loading started')}
-          onCanPlay={() => debugLog('audio', 'Audio can play')}
-          onLoadedData={() => debugLog('audio', 'Audio data loaded')}
-        />
-        
-        {/* Debug Panel */}
-        <div style={{ 
-          position: 'fixed', 
-          top: '10px', 
-          right: '10px', 
-          background: 'rgba(0,0,0,0.8)', 
-          color: 'white', 
-          padding: '15px', 
-          borderRadius: '10px',
-          fontSize: '12px',
-          maxWidth: '300px',
-          maxHeight: '200px',
-          overflow: 'auto',
-          fontFamily: 'monospace'
-        }}>
-          <strong>🐛 Debug Info</strong>
-          <div>Connection: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}</div>
-          <div>WebSocket State: {wsRef.current ? wsRef.current.readyState : 'null'}</div>
-          <div>Recording: {isRecording ? '🎤 Recording' : '⏹️ Stopped'}</div>
-          <div>Continuous: {isContinuousMode ? '🔄 Active' : '⏸️ Inactive'}</div>
-          <div>AI Status: {isAIResponding ? '⏳ Thinking' : '✅ Ready'}</div>
-          <div>Audio Level: {(audioLevel * 100).toFixed(1)}%</div>
-          <div>Emotion: {currentEmotion}</div>
-          <div>Last Speech: {Math.round((Date.now() - lastSpeechTime) / 1000)}s ago</div>
-          <div>Recognition Restarts: {recognitionRestartCount}</div>
-          {lastRecognitionError && (
-            <div style={{ color: '#ff6b6b' }}>Last Error: {lastRecognitionError}</div>
-          )}
-          <div>Status: {status}</div>
-          <div style={{ marginTop: '10px' }}>
-            <strong>Recent Logs:</strong>
-            {Object.entries(debugInfo).slice(-3).map(([category, logs]) => 
-              logs.slice(-1).map((log, i) => (
-                <div key={`${category}-${i}`} style={{ fontSize: '10px', opacity: 0.8 }}>
-                  [{category.toUpperCase()}] {log.message}
-                </div>
-              ))
+            Retry
+          </button>
+        )}
+        {isContinuousMode && (lastRecognitionError || recognitionRestartCount > 3) && (
+          <button 
+            onClick={manualRestartRecognition}
+            className="fix-speech-button"
+          >
+            🔄 Fix Speech
+          </button>
+        )}
+      </div>
+      
+      <button 
+        className={`continuous-mode-button ${isContinuousMode ? 'active' : 'inactive'}`}
+        onClick={handleContinuousModeToggle}
+        disabled={!isConnected || isProcessing}
+      >
+        {isContinuousMode ? '🛑 Stop Continuous Mode' : '🔄 Start Continuous Mode'}
+      </button>
+      
+      <div 
+        className={`audio-level-indicator ${isContinuousMode ? 'visible' : 'hidden'}`}
+        style={{ '--level': `${Math.min(audioLevel * 100, 100)}%` }}
+      />
+      
+      <div className="waveform-container">
+        {[...Array(8)].map((_, i) => (
+          <div 
+            key={i} 
+            className={`wave-bar ${isRecording ? 'active' : 'inactive'} delay-${i * 100}`}
+          />
+        ))}
+      </div>
+      
+      <button
+        className={`voice-button ${isRecording || isContinuousMode ? 'recording' : ''} ${currentEmotion}`}
+        onClick={handleVoiceButtonClick}
+        disabled={!isConnected || isProcessing}
+      >
+        {isContinuousMode ? '🎙️' : (isRecording ? '🛑' : '🎤')}
+      </button>
+      
+      <div className="chat-container" ref={chatContainerRef}>
+        {messages.map((message, index) => (
+          <div key={index} className={`message ${message.isUser ? 'user' : 'assistant'}`}>
+            {message.isUser ? '👤 ' : '🤖 '}
+            {message.text}
+            {message.emotion && !message.isUser && (
+              <span style={{ marginLeft: '10px' }}>
+                {getEmotionEmoji(message.emotion)}
+              </span>
             )}
           </div>
+        ))}
+        
+        <div className={`typing-indicator ${isAIResponding ? 'visible' : 'hidden'}`}>
+          🤖 AI is thinking...
         </div>
-      </Container>
-    </>
+        
+        {messages.length === 0 && !isAIResponding && (
+          <div className="empty-state">
+            Start a conversation by pressing the microphone button or typing below!
+          </div>
+        )}
+      </div>
+      
+      <div className="input-container">
+        <input
+          className="text-input"
+          value={textInput}
+          onChange={(e) => setTextInput(e.target.value)}
+          placeholder="Or type your message here..."
+          onKeyPress={(e) => e.key === 'Enter' && sendTextMessage()}
+          disabled={!isConnected}
+        />
+        <button 
+          className="send-button"
+          onClick={sendTextMessage}
+          disabled={!textInput.trim() || !isConnected}
+        >
+          Send
+        </button>
+      </div>
+      
+      <audio 
+        ref={audioRef} 
+        style={{ display: 'none' }}
+        preload="auto"
+        controls={false}
+        muted={false}
+        autoPlay={false}
+        crossOrigin="anonymous"
+        onLoadStart={() => debugLog('audio', 'Audio loading started')}
+        onCanPlay={() => debugLog('audio', 'Audio can play')}
+        onLoadedData={() => debugLog('audio', 'Audio data loaded')}
+      />
+      
+      {/* Debug Panel */}
+      <div className="debug-panel">
+        <strong>🐛 Debug Info</strong>
+        <div>Connection: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}</div>
+        <div>WebSocket State: {wsRef.current ? wsRef.current.readyState : 'null'}</div>
+        <div>Recording: {isRecording ? '🎤 Recording' : '⏹️ Stopped'}</div>
+        <div>Continuous: {isContinuousMode ? '🔄 Active' : '⏸️ Inactive'}</div>
+        <div>AI Status: {isAIResponding ? '⏳ Thinking' : '✅ Ready'}</div>
+        <div>Audio Level: {(audioLevel * 100).toFixed(1)}%</div>
+        <div>Emotion: {currentEmotion}</div>
+        <div>Last Speech: {Math.round((Date.now() - lastSpeechTime) / 1000)}s ago</div>
+        <div>Recognition Restarts: {recognitionRestartCount}</div>
+        {lastRecognitionError && (
+          <div className="error-text">Last Error: {lastRecognitionError}</div>
+        )}
+        <div>Status: {status}</div>
+        <div style={{ marginTop: '10px' }}>
+          <strong>Recent Logs:</strong>
+          {Object.entries(debugInfo).slice(-3).map(([category, logs]) => 
+            logs.slice(-1).map((log, i) => (
+              <div key={`${category}-${i}`} style={{ fontSize: '10px', opacity: 0.8 }}>
+                [{category.toUpperCase()}] {log.message}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
