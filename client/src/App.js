@@ -41,6 +41,8 @@ function App() {
   // Conversation Memory System (non-intrusive)
   const conversationMemoryRef = useRef(null);
   const [memoryStats, setMemoryStats] = useState(null);
+  
+  // Audio interruption system (now uses existing audio level monitoring)
 
   // Debug logging helper
   const debugLog = (category, message, data = null) => {
@@ -345,6 +347,8 @@ function App() {
     }
   }, [messages]);
 
+  // Audio interruption now uses the existing audio level monitoring system
+
   const playAudio = async (base64Audio) => {
     try {
       debugLog('audio', 'Attempting to play audio (optimized)', { audioLength: base64Audio?.length });
@@ -368,22 +372,68 @@ function App() {
         audioRef.current.preload = 'auto';
         audioRef.current.src = audioUrl;
         
+        // Remove any existing event listeners first
+        audioRef.current.onplay = null;
+        audioRef.current.onpause = null;
+        audioRef.current.onended = null;
+        audioRef.current.onloadstart = null;
+        audioRef.current.oncanplay = null;
+        audioRef.current.onloadeddata = null;
+        
         // Set up event listeners for audio state tracking
-        audioRef.current.onplay = () => {
+        const handlePlay = () => {
           setIsAudioPlaying(true);
-          debugLog('audio', 'Audio playback started - speech detection active');
+          
+          // If not in continuous mode, we need to start audio monitoring for interruption
+          if (!isContinuousModeRef.current && !analyserRef.current) {
+            debugLog('audio_interrupt', 'Starting audio monitoring for interruption (not in continuous mode)');
+            setupSilenceDetector().then(() => {
+              debugLog('audio_interrupt', 'Audio monitoring ready for interruption detection');
+            }).catch(error => {
+              debugLog('error', 'Failed to setup audio monitoring for interruption', error.message);
+            });
+          }
         };
         
-        audioRef.current.onpause = () => {
+        const handlePause = () => {
           setIsAudioPlaying(false);
-          debugLog('audio', 'Audio playback paused by user speech');
         };
         
-        audioRef.current.onended = () => {
+        const handleEnded = () => {
           setIsAudioPlaying(false);
           URL.revokeObjectURL(audioUrl);
-          debugLog('audio', 'Audio playback ended naturally');
+          
+          // Clean up audio monitoring if it was started only for interruption (not continuous mode)
+          if (!isContinuousModeRef.current && streamRef.current) {
+            debugLog('audio_interrupt', 'Cleaning up audio monitoring (was started for interruption only)');
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+              audioContextRef.current.close();
+              audioContextRef.current = null;
+            }
+            analyserRef.current = null;
+          }
         };
+        
+        audioRef.current.addEventListener('play', handlePlay);
+        audioRef.current.addEventListener('pause', handlePause);
+        audioRef.current.addEventListener('ended', handleEnded);
+        
+        // Add a periodic state checker to keep React state in sync with actual audio state
+        const stateCheckInterval = setInterval(() => {
+          if (audioRef.current) {
+            const audioActuallyPlaying = !audioRef.current.paused && !audioRef.current.ended && audioRef.current.currentTime > 0;
+            if (audioActuallyPlaying !== isAudioPlaying) {
+              setIsAudioPlaying(audioActuallyPlaying);
+            }
+          }
+        }, 100);
+        
+        // Cleanup interval when audio ends
+        const cleanupStateChecker = () => clearInterval(stateCheckInterval);
+        audioRef.current.addEventListener('ended', cleanupStateChecker);
+        audioRef.current.addEventListener('error', cleanupStateChecker);
         
         // Load and play as soon as possible
         const playPromise = audioRef.current.play();
@@ -739,25 +789,28 @@ function App() {
       
       // If volume below threshold => silence detected
       const silenceThreshold = 0.01;
-      const speechThreshold = 0.02; // Threshold for detecting user speech
+      const speechThreshold = 0.05; // 5% threshold for interrupting AI audio
       
       if (rms < silenceThreshold) {
         // Silence is being handled by the timer, no need to do anything here
       } else {
-        // Audio detected, reset silence timer
-        resetSilenceTimer();
+        // Audio detected, reset silence timer (only if continuous mode is active)
+        if (isContinuousModeRef.current) {
+          resetSilenceTimer();
+        }
         
-        // If user is speaking while AI audio is playing, pause the audio
-        if (rms > speechThreshold && isAudioPlaying && audioRef.current) {
-          debugLog('speech_interrupt', 'User speech detected during AI audio - pausing playback', { audioLevel: rms });
+        // Simple audio interruption: Stop AI audio when user speaks above 5%
+        if (rms > speechThreshold && audioRef.current && !audioRef.current.paused) {
           audioRef.current.pause();
           setIsAudioPlaying(false);
         }
       }
       
-      // Continue monitoring only if continuous mode is still active
-      if (isContinuousModeRef.current) {
+      // Continue monitoring if continuous mode is active OR if audio is playing (for interruption)
+      if (isContinuousModeRef.current || isAudioPlaying) {
         requestAnimationFrame(checkAudioLevel);
+      } else {
+        debugLog('audio', 'Stopping audio level monitoring - no active needs');
       }
     };
     
