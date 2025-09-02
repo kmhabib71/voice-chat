@@ -301,18 +301,63 @@ The user seems to be feeling ${emotion}. Match their emotional tone while being 
   }
 }
 
-// Main response router - decides which AI model to use based on extracted keywords
-async function generateResponse(userMessage, emotion, conversationMemory = null, nsfwClassification = null) {
+// Conversation state tracking for NSFW mode persistence
+const conversationStates = new Map(); // sessionId -> { mode: 'general'|'nsfw', lastActivity: timestamp }
+
+// Helper function to get/initialize conversation state
+function getConversationState(sessionId) {
+  if (!conversationStates.has(sessionId)) {
+    conversationStates.set(sessionId, {
+      mode: 'general',
+      lastActivity: Date.now()
+    });
+  }
+  const state = conversationStates.get(sessionId);
+  state.lastActivity = Date.now();
+  return state;
+}
+
+// Clean up old conversation states (older than 1 hour)
+setInterval(() => {
+  const cutoffTime = Date.now() - (60 * 60 * 1000); // 1 hour
+  for (const [sessionId, state] of conversationStates.entries()) {
+    if (state.lastActivity < cutoffTime) {
+      conversationStates.delete(sessionId);
+      debugLog('cleanup', 'Removed expired conversation state', { sessionId });
+    }
+  }
+}, 10 * 60 * 1000); // Run cleanup every 10 minutes
+
+// Main response router - decides which AI model to use based on conversation state and content
+async function generateResponse(userMessage, emotion, conversationMemory = null, nsfwClassification = null, sessionId = null) {
   try {
-    // Use NSFW classification from extractKeywords if provided
-    if (nsfwClassification && nsfwClassification.isNSFW && nsfwClassification.confidence > 0.6) {
-      debugLog('ai_routing', 'Using Llama 3.3 model for NSFW/intimate content', {
-        category: nsfwClassification.category,
-        confidence: nsfwClassification.confidence
+    const conversationState = sessionId ? getConversationState(sessionId) : null;
+    
+    // If already in NSFW mode, continue using Llama without re-checking
+    if (conversationState && conversationState.mode === 'nsfw') {
+      debugLog('ai_routing', 'Continuing NSFW conversation with Llama 3.3 (no re-check)', {
+        sessionId,
+        mode: conversationState.mode
       });
+      return await generateNSFWResponse(userMessage, emotion, conversationMemory);
+    }
+    
+    // First-time NSFW classification check (only for general mode or no session)
+    if (nsfwClassification && nsfwClassification.isNSFW && nsfwClassification.confidence > 0.6) {
+      // Switch to NSFW mode for this session
+      if (conversationState) {
+        conversationState.mode = 'nsfw';
+        debugLog('ai_routing', 'Switched to NSFW mode - future messages will use Llama directly', {
+          sessionId,
+          category: nsfwClassification.category,
+          confidence: nsfwClassification.confidence
+        });
+      }
       return await generateNSFWResponse(userMessage, emotion, conversationMemory);
     } else {
       debugLog('ai_routing', 'Using GPT-4 mini model for general content', {
+        sessionId,
+        mode: conversationState?.mode || 'no-session',
         category: nsfwClassification?.category || 'general',
         confidence: nsfwClassification?.confidence || 0.5
       });
@@ -478,6 +523,11 @@ const debugLog = (category, message, data = null) => {
 wss.on('connection', (ws) => {
   debugLog('websocket', '🔌 New WebSocket connection established');
   
+  // Generate session ID for this connection
+  const sessionId = uuidv4();
+  ws.sessionId = sessionId;
+  debugLog('websocket', 'Assigned session ID', { sessionId });
+  
   // Set TCP_NODELAY for lower latency
   ws._socket.setNoDelay(true);
   
@@ -489,25 +539,39 @@ wss.on('connection', (ws) => {
       debugLog('websocket', '📨 Received message from client', { type: data.type, textLength: data.text?.length });
       
       if (data.type === 'voice_message') {
-        debugLog('processing', '🎭 Processing voice message', { text: data.text.substring(0, 50) + '...' });
+        debugLog('processing', '🎭 Processing voice message', { sessionId, text: data.text.substring(0, 50) + '...' });
         
-        // Extract keywords, emotion, and NSFW classification in one API call
         const conversationMemory = data.conversationMemory || null;
-        const contextTopics = conversationMemory?.session?.dominantTopics || [];
+        const conversationState = getConversationState(sessionId);
+        let keywordResult = null;
+        let emotion = 'neutral';
         
-        debugLog('keywords', '📋 Extracting keywords, emotion, and NSFW classification');
-        const keywordResult = await extractKeywords(data.text, contextTopics);
-        
-        // Get emotion from extracted keywords (first emotion or fallback)
-        const emotion = keywordResult.emotions && keywordResult.emotions.length > 0 
-          ? keywordResult.emotions[0] 
-          : detectEmotionFromText(data.text);
+        // Only extract keywords if NOT in NSFW mode (to avoid GPT-4 mini filtering)
+        if (conversationState.mode !== 'nsfw') {
+          const contextTopics = conversationMemory?.session?.dominantTopics || [];
+          debugLog('keywords', '📋 Extracting keywords, emotion, and NSFW classification (first-time check)', { sessionId, mode: conversationState.mode });
+          keywordResult = await extractKeywords(data.text, contextTopics);
           
-        debugLog('emotion', '😊 Emotion extracted from keywords', { 
-          emotion, 
-          extractedEmotions: keywordResult.emotions,
-          nsfwClassification: keywordResult.nsfw_classification 
-        });
+          // Get emotion from extracted keywords
+          emotion = keywordResult.emotions && keywordResult.emotions.length > 0 
+            ? keywordResult.emotions[0] 
+            : detectEmotionFromText(data.text);
+            
+          debugLog('emotion', '😊 Emotion extracted from keywords', { 
+            sessionId,
+            emotion, 
+            extractedEmotions: keywordResult.emotions,
+            nsfwClassification: keywordResult.nsfw_classification 
+          });
+        } else {
+          // In NSFW mode - just detect emotion directly, skip GPT-4 mini classification
+          emotion = detectEmotionFromText(data.text);
+          debugLog('emotion', '😊 Emotion detected directly (NSFW mode - skipping GPT classification)', { 
+            sessionId,
+            emotion,
+            mode: conversationState.mode
+          });
+        }
         
         // Send immediate response for UI feedback
         const responseData = {
@@ -521,6 +585,7 @@ wss.on('connection', (ws) => {
         // Generate AI response using optimized routing system
         if (conversationMemory) {
           debugLog('memory', '🧠 Using conversation memory for AI response', {
+            sessionId,
             dominantTopics: conversationMemory.session?.dominantTopics || [],
             messageCount: conversationMemory.session?.messageCount || 0,
             conversationTone: conversationMemory.session?.conversationTone || 'unknown'
@@ -531,7 +596,8 @@ wss.on('connection', (ws) => {
           data.text, 
           emotion, 
           conversationMemory, 
-          keywordResult.nsfw_classification
+          keywordResult?.nsfw_classification,
+          sessionId
         );
         
         // Get AI response and send complete message
@@ -599,26 +665,39 @@ wss.on('connection', (ws) => {
 // REST API Routes
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, conversationMemory = null } = req.body;
+    const { message, conversationMemory = null, sessionId = null } = req.body;
     
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Extract keywords, emotion, and NSFW classification in one API call
-    const contextTopics = conversationMemory?.session?.dominantTopics || [];
-    const keywordResult = await extractKeywords(message, contextTopics);
+    // Use provided sessionId or generate new one for REST API
+    const activeSessionId = sessionId || uuidv4();
+    const conversationState = getConversationState(activeSessionId);
+    let keywordResult = null;
+    let emotion = 'neutral';
+
+    // Only extract keywords if NOT in NSFW mode (to avoid GPT-4 mini filtering)
+    if (conversationState.mode !== 'nsfw') {
+      const contextTopics = conversationMemory?.session?.dominantTopics || [];
+      keywordResult = await extractKeywords(message, contextTopics);
+      
+      // Get emotion from extracted keywords
+      emotion = keywordResult.emotions && keywordResult.emotions.length > 0 
+        ? keywordResult.emotions[0] 
+        : detectEmotionFromText(message);
+    } else {
+      // In NSFW mode - just detect emotion directly
+      emotion = detectEmotionFromText(message);
+    }
     
-    // Get emotion from extracted keywords (first emotion or fallback)
-    const emotion = keywordResult.emotions && keywordResult.emotions.length > 0 
-      ? keywordResult.emotions[0] 
-      : detectEmotionFromText(message);
-    
-    const aiResponse = await generateResponse(message, emotion, conversationMemory, keywordResult.nsfw_classification);
+    const aiResponse = await generateResponse(message, emotion, conversationMemory, keywordResult?.nsfw_classification, activeSessionId);
 
     res.json({
       response: aiResponse,
       emotion: emotion,
+      sessionId: activeSessionId,
+      conversationMode: conversationState.mode,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -750,6 +829,38 @@ app.post('/api/build-context', async (req, res) => {
   }
 });
 
+// Reset conversation state endpoint (optional - for testing/debugging)
+app.post('/api/reset-conversation', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+
+    if (conversationStates.has(sessionId)) {
+      conversationStates.delete(sessionId);
+      debugLog('conversation', 'Manual conversation reset', { sessionId });
+      res.json({ 
+        success: true, 
+        message: 'Conversation state reset',
+        sessionId,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.json({ 
+        success: true, 
+        message: 'No conversation state found for session',
+        sessionId,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    debugLog('error', 'Conversation reset error', error.message);
+    res.status(500).json({ error: 'Could not reset conversation state' });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -757,8 +868,10 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     services: {
       openai: !!process.env.OPENAI_API_KEY,
-      elevenlabs: !!process.env.ELEVENLABS_API_KEY
-    }
+      elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+      llama: !!process.env.LLAMA_API_KEY
+    },
+    activeConversations: conversationStates.size
   });
 });
 
