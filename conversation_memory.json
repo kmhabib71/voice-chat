@@ -1,0 +1,1148 @@
+{
+  "sessionId": "session_1756639220351_awpr13l",
+  "keywords": {
+    "entities": {
+      "jbju": {
+        "count": 1.9656829172808306,
+        "lastSeen": 1756699247936,
+        "contexts": [],
+        "firstSeen": 1756640428051
+      },
+      "jbju affiliating": {
+        "count": 1,
+        "lastSeen": 1756640430184,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "brands": {
+        "count": 1.9651118983492917,
+        "lastSeen": 1756700246386,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "products": {
+        "count": 1,
+        "lastSeen": 1756640430184,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "services": {
+        "count": 1,
+        "lastSeen": 1756640430184,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "commissions": {
+        "count": 1,
+        "lastSeen": 1756640430184,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "jay viju": {
+        "count": 1,
+        "lastSeen": 1756640454879,
+        "contexts": [],
+        "firstSeen": 1756640454879
+      },
+      "jbju affiliating program": {
+        "count": 1,
+        "lastSeen": 1756640454879,
+        "contexts": [],
+        "firstSeen": 1756640454879
+      },
+      "jvu": {
+        "count": 1,
+        "lastSeen": 1756640480728,
+        "contexts": [],
+        "firstSeen": 1756640480728
+      },
+      "jvzoo.com": {
+        "count": 1,
+        "lastSeen": 1756640498288,
+        "contexts": [],
+        "firstSeen": 1756640498288
+      },
+      "jvzoo": {
+        "count": 2.9315037113054645,
+        "lastSeen": 1756699247936,
+        "contexts": [],
+        "firstSeen": 1756640499883
+      },
+      "affiliate marketing": {
+        "count": 1,
+        "lastSeen": 1756640499883,
+        "contexts": [],
+        "firstSeen": 1756640499883
+      },
+      "digital product sales": {
+        "count": 1,
+        "lastSeen": 1756640499883,
+        "contexts": [],
+        "firstSeen": 1756640499883
+      },
+      "facebook": {
+        "count": 6.878652488981624,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756640563222
+      },
+      "social media": {
+        "count": 1,
+        "lastSeen": 1756640567404,
+        "contexts": [],
+        "firstSeen": 1756640567404
+      },
+      "groups": {
+        "count": 1,
+        "lastSeen": 1756640567404,
+        "contexts": [],
+        "firstSeen": 1756640567404
+      },
+      "events": {
+        "count": 1,
+        "lastSeen": 1756640567404,
+        "contexts": [],
+        "firstSeen": 1756640567404
+      },
+      "marketplace": {
+        "count": 1,
+        "lastSeen": 1756640567404,
+        "contexts": [],
+        "firstSeen": 1756640567404
+      },
+      "tiktok": {
+        "count": 1,
+        "lastSeen": 1756699274671,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "instagram reels": {
+        "count": 1,
+        "lastSeen": 1756699274671,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "digital marketing": {
+        "count": 2.9945025111575467,
+        "lastSeen": 1756706665845,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "strategies": {
+        "count": 1.995621677001189,
+        "lastSeen": 1756706665845,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "trends": {
+        "count": 1,
+        "lastSeen": 1756699274671,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "smartwatches": {
+        "count": 5.984642734326624,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756700246386
+      },
+      "features": {
+        "count": 1,
+        "lastSeen": 1756700246386,
+        "contexts": [],
+        "firstSeen": 1756700246386
+      },
+      "daily routine": {
+        "count": 1,
+        "lastSeen": 1756700246387,
+        "contexts": [],
+        "firstSeen": 1756700246387
+      },
+      "spo2": {
+        "count": 1,
+        "lastSeen": 1756700300406,
+        "contexts": [],
+        "firstSeen": 1756700300406
+      },
+      "photoplethysmography": {
+        "count": 1,
+        "lastSeen": 1756700300406,
+        "contexts": [],
+        "firstSeen": 1756700300406
+      },
+      "leds": {
+        "count": 1,
+        "lastSeen": 1756700300406,
+        "contexts": [],
+        "firstSeen": 1756700300406
+      },
+      "skin": {
+        "count": 1,
+        "lastSeen": 1756700300406,
+        "contexts": [],
+        "firstSeen": 1756700300406
+      },
+      "spo2 sensor": {
+        "count": 1,
+        "lastSeen": 1756700360009,
+        "contexts": [],
+        "firstSeen": 1756700360009
+      },
+      "health tracking": {
+        "count": 1,
+        "lastSeen": 1756700360009,
+        "contexts": [],
+        "firstSeen": 1756700360009
+      },
+      "steps": {
+        "count": 1,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756700414512
+      },
+      "heart rate": {
+        "count": 1,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756700414512
+      },
+      "gps navigation": {
+        "count": 1,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756700414512
+      },
+      "walking experiences": {
+        "count": 1,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756700414512
+      },
+      "smartphones": {
+        "count": 5.9955965891463885,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "high-resolution cameras": {
+        "count": 1.9985847470644977,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "app ecosystems": {
+        "count": 1,
+        "lastSeen": 1756702992331,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "biometric security": {
+        "count": 1,
+        "lastSeen": 1756702992331,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "5g": {
+        "count": 1,
+        "lastSeen": 1756702992331,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "microphones": {
+        "count": 1,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756704299054
+      },
+      "voice recognition": {
+        "count": 1,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756704299054
+      },
+      "noise cancellation": {
+        "count": 1,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756704299054
+      },
+      "smart devices": {
+        "count": 1,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756704299054
+      },
+      "ai": {
+        "count": 1,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756704299054
+      },
+      "apps": {
+        "count": 1.9996448789726489,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756704779632
+      },
+      "social media platforms": {
+        "count": 1,
+        "lastSeen": 1756704779632,
+        "contexts": [],
+        "firstSeen": 1756704779632
+      },
+      "powerful processors": {
+        "count": 1,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756705377915
+      },
+      "security features": {
+        "count": 1,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756705377915
+      },
+      "camera quality": {
+        "count": 1,
+        "lastSeen": 1756706665845,
+        "contexts": [],
+        "firstSeen": 1756706665845
+      },
+      "battery life": {
+        "count": 1,
+        "lastSeen": 1756706665845,
+        "contexts": [],
+        "firstSeen": 1756706665845
+      }
+    },
+    "topics": {
+      "digital marketing": {
+        "count": 25.36503852674333,
+        "lastSeen": 1756706798649,
+        "contexts": [],
+        "firstSeen": 1756639267966
+      },
+      "strategies": {
+        "count": 17.529801426072115,
+        "lastSeen": 1756706798649,
+        "contexts": [],
+        "firstSeen": 1756639270949
+      },
+      "tools": {
+        "count": 3.895980621344978,
+        "lastSeen": 1756699247936,
+        "contexts": [],
+        "firstSeen": 1756639270949
+      },
+      "trends": {
+        "count": 1,
+        "lastSeen": 1756639270949,
+        "contexts": [],
+        "firstSeen": 1756639270949
+      },
+      "improvement": {
+        "count": 1,
+        "lastSeen": 1756639286189,
+        "contexts": [],
+        "firstSeen": 1756639286189
+      },
+      "improving your digital": {
+        "count": 1.9988493305117028,
+        "lastSeen": 1756641226890,
+        "contexts": [],
+        "firstSeen": 1756639287551
+      },
+      "promotion": {
+        "count": 1,
+        "lastSeen": 1756640286575,
+        "contexts": [],
+        "firstSeen": 1756640286575
+      },
+      "success": {
+        "count": 6.773561838508111,
+        "lastSeen": 1756705373856,
+        "contexts": [],
+        "firstSeen": 1756640325859
+      },
+      "strategic planning": {
+        "count": 1,
+        "lastSeen": 1756640327462,
+        "contexts": [],
+        "firstSeen": 1756640327462
+      },
+      "continuous learning": {
+        "count": 1,
+        "lastSeen": 1756640327462,
+        "contexts": [],
+        "firstSeen": 1756640327462
+      },
+      "adaptability": {
+        "count": 1,
+        "lastSeen": 1756640327462,
+        "contexts": [],
+        "firstSeen": 1756640327462
+      },
+      "risks": {
+        "count": 1,
+        "lastSeen": 1756640363457,
+        "contexts": [],
+        "firstSeen": 1756640363457
+      },
+      "data privacy": {
+        "count": 1,
+        "lastSeen": 1756640363457,
+        "contexts": [],
+        "firstSeen": 1756640363457
+      },
+      "affiliating": {
+        "count": 1,
+        "lastSeen": 1756640428051,
+        "contexts": [],
+        "firstSeen": 1756640428051
+      },
+      "affiliate marketing": {
+        "count": 2.9999576755772384,
+        "lastSeen": 1756640499883,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "partnerships": {
+        "count": 1,
+        "lastSeen": 1756640430184,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "monetization": {
+        "count": 1,
+        "lastSeen": 1756640430184,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "traffic generation": {
+        "count": 1,
+        "lastSeen": 1756640430184,
+        "contexts": [],
+        "firstSeen": 1756640430184
+      },
+      "jay viju": {
+        "count": 1,
+        "lastSeen": 1756640452948,
+        "contexts": [],
+        "firstSeen": 1756640452948
+      },
+      "program understanding": {
+        "count": 1,
+        "lastSeen": 1756640454879,
+        "contexts": [],
+        "firstSeen": 1756640454879
+      },
+      "online sales": {
+        "count": 1,
+        "lastSeen": 1756640498288,
+        "contexts": [],
+        "firstSeen": 1756640498288
+      },
+      "social media": {
+        "count": 2.925190477910321,
+        "lastSeen": 1756704779632,
+        "contexts": [],
+        "firstSeen": 1756640563222
+      },
+      "advertising": {
+        "count": 1,
+        "lastSeen": 1756640563222,
+        "contexts": [],
+        "firstSeen": 1756640563222
+      },
+      "platform features": {
+        "count": 1,
+        "lastSeen": 1756640563222,
+        "contexts": [],
+        "firstSeen": 1756640563222
+      },
+      "business features": {
+        "count": 1,
+        "lastSeen": 1756640567404,
+        "contexts": [],
+        "firstSeen": 1756640567404
+      },
+      "content sharing": {
+        "count": 1,
+        "lastSeen": 1756640567404,
+        "contexts": [],
+        "firstSeen": 1756640567404
+      },
+      "community engagement": {
+        "count": 1,
+        "lastSeen": 1756640567404,
+        "contexts": [],
+        "firstSeen": 1756640567404
+      },
+      "branding": {
+        "count": 1,
+        "lastSeen": 1756640596706,
+        "contexts": [],
+        "firstSeen": 1756640596706
+      },
+      "platforms": {
+        "count": 1.9955331541455035,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756699247936
+      },
+      "emerging trends": {
+        "count": 1,
+        "lastSeen": 1756699274671,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "innovative strategies": {
+        "count": 1,
+        "lastSeen": 1756699274671,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "new platforms": {
+        "count": 1,
+        "lastSeen": 1756699274671,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "yes, i understand": {
+        "count": 1,
+        "lastSeen": 1756699306839,
+        "contexts": [],
+        "firstSeen": 1756699306839
+      },
+      "smartwatch": {
+        "count": 1,
+        "lastSeen": 1756700245957,
+        "contexts": [],
+        "firstSeen": 1756700245957
+      },
+      "technology": {
+        "count": 3.9945164574150653,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756700245957
+      },
+      "wearable devices": {
+        "count": 2.9998321992698145,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756700245957
+      },
+      "smartwatch features": {
+        "count": 1.9999325480308325,
+        "lastSeen": 1756700360009,
+        "contexts": [],
+        "firstSeen": 1756700246387
+      },
+      "brands": {
+        "count": 1,
+        "lastSeen": 1756700246387,
+        "contexts": [],
+        "firstSeen": 1756700246387
+      },
+      "daily routine enhancement": {
+        "count": 1,
+        "lastSeen": 1756700246387,
+        "contexts": [],
+        "firstSeen": 1756700246387
+      },
+      "oxygen saturation": {
+        "count": 1.9999989717599513,
+        "lastSeen": 1756700265872,
+        "contexts": [],
+        "firstSeen": 1756700264140
+      },
+      "health monitoring": {
+        "count": 1.9999989717599513,
+        "lastSeen": 1756700265872,
+        "contexts": [],
+        "firstSeen": 1756700264140
+      },
+      "medical technology": {
+        "count": 1,
+        "lastSeen": 1756700264140,
+        "contexts": [],
+        "firstSeen": 1756700264140
+      },
+      "pulse oximeter": {
+        "count": 1,
+        "lastSeen": 1756700265872,
+        "contexts": [],
+        "firstSeen": 1756700265872
+      },
+      "medical devices": {
+        "count": 1,
+        "lastSeen": 1756700265872,
+        "contexts": [],
+        "firstSeen": 1756700265872
+      },
+      "sensor technology": {
+        "count": 1.9999989830397151,
+        "lastSeen": 1756700300406,
+        "contexts": [],
+        "firstSeen": 1756700298693
+      },
+      "device functionality": {
+        "count": 1,
+        "lastSeen": 1756700298693,
+        "contexts": [],
+        "firstSeen": 1756700298693
+      },
+      "health technology": {
+        "count": 2.9924120967829975,
+        "lastSeen": 1756706733010,
+        "contexts": [],
+        "firstSeen": 1756700300406
+      },
+      "biometrics": {
+        "count": 1,
+        "lastSeen": 1756700300406,
+        "contexts": [],
+        "firstSeen": 1756700300406
+      },
+      "food": {
+        "count": 1,
+        "lastSeen": 1756700342283,
+        "contexts": [],
+        "firstSeen": 1756700342283
+      },
+      "expenses": {
+        "count": 1,
+        "lastSeen": 1756700342283,
+        "contexts": [],
+        "firstSeen": 1756700342283
+      },
+      "cost of living": {
+        "count": 1,
+        "lastSeen": 1756700342283,
+        "contexts": [],
+        "firstSeen": 1756700342283
+      },
+      "healthy eating": {
+        "count": 1,
+        "lastSeen": 1756700343801,
+        "contexts": [],
+        "firstSeen": 1756700343801
+      },
+      "meal planning": {
+        "count": 1,
+        "lastSeen": 1756700343801,
+        "contexts": [],
+        "firstSeen": 1756700343801
+      },
+      "budgeting": {
+        "count": 1,
+        "lastSeen": 1756700343801,
+        "contexts": [],
+        "firstSeen": 1756700343801
+      },
+      "seasonal produce": {
+        "count": 1,
+        "lastSeen": 1756700343801,
+        "contexts": [],
+        "firstSeen": 1756700343801
+      },
+      "marketing strategies": {
+        "count": 1.9973796310322558,
+        "lastSeen": 1756704779632,
+        "contexts": [],
+        "firstSeen": 1756700360009
+      },
+      "health": {
+        "count": 1,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756700414512
+      },
+      "fitness": {
+        "count": 1,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756700414512
+      },
+      "smartwatches typically use": {
+        "count": 1,
+        "lastSeen": 1756700505390,
+        "contexts": [],
+        "firstSeen": 1756700505390
+      },
+      "smartwatches": {
+        "count": 2.992699975097996,
+        "lastSeen": 1756706694084,
+        "contexts": [],
+        "firstSeen": 1756700517524
+      },
+      "digital marketing strategies": {
+        "count": 3.9926832111176,
+        "lastSeen": 1756706694084,
+        "contexts": [],
+        "firstSeen": 1756700517524
+      },
+      "smartphone features": {
+        "count": 3.995481397672251,
+        "lastSeen": 1756706756017,
+        "contexts": [],
+        "firstSeen": 1756702990189
+      },
+      "mobile devices": {
+        "count": 1,
+        "lastSeen": 1756702990189,
+        "contexts": [],
+        "firstSeen": 1756702990189
+      },
+      "user experience": {
+        "count": 2.9979431923016837,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756702990189
+      },
+      "usability": {
+        "count": 1,
+        "lastSeen": 1756702992331,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "functionality": {
+        "count": 1,
+        "lastSeen": 1756702992331,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "connectivity": {
+        "count": 1,
+        "lastSeen": 1756702992331,
+        "contexts": [],
+        "firstSeen": 1756702992331
+      },
+      "microphone technology": {
+        "count": 1,
+        "lastSeen": 1756704296717,
+        "contexts": [],
+        "firstSeen": 1756704296717
+      },
+      "future trends": {
+        "count": 1,
+        "lastSeen": 1756704296718,
+        "contexts": [],
+        "firstSeen": 1756704296718
+      },
+      "audio equipment": {
+        "count": 1,
+        "lastSeen": 1756704296718,
+        "contexts": [],
+        "firstSeen": 1756704296718
+      },
+      "innovation": {
+        "count": 1,
+        "lastSeen": 1756704296718,
+        "contexts": [],
+        "firstSeen": 1756704296718
+      },
+      "advancements": {
+        "count": 1,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756704299054
+      },
+      "digital applications": {
+        "count": 1,
+        "lastSeen": 1756704299054,
+        "contexts": [],
+        "firstSeen": 1756704299054
+      },
+      "smartphones": {
+        "count": 3.9969558364611273,
+        "lastSeen": 1756706694084,
+        "contexts": [],
+        "firstSeen": 1756704777558
+      },
+      "features": {
+        "count": 4.999069450196366,
+        "lastSeen": 1756706754199,
+        "contexts": [],
+        "firstSeen": 1756705373856
+      },
+      "photography": {
+        "count": 1,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756705377915
+      },
+      "multitasking": {
+        "count": 1,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756705377915
+      },
+      "security": {
+        "count": 1,
+        "lastSeen": 1756705377915,
+        "contexts": [],
+        "firstSeen": 1756705377915
+      },
+      "discussion": {
+        "count": 1,
+        "lastSeen": 1756705394701,
+        "contexts": [],
+        "firstSeen": 1756705394701
+      },
+      "interests": {
+        "count": 1,
+        "lastSeen": 1756705394701,
+        "contexts": [],
+        "firstSeen": 1756705394701
+      },
+      "camera quality": {
+        "count": 1.9999464693998483,
+        "lastSeen": 1756706756017,
+        "contexts": [],
+        "firstSeen": 1756706665846
+      },
+      "battery life": {
+        "count": 1.9999464693998483,
+        "lastSeen": 1756706756017,
+        "contexts": [],
+        "firstSeen": 1756706665846
+      },
+      "technology advancements": {
+        "count": 1,
+        "lastSeen": 1756706705381,
+        "contexts": [],
+        "firstSeen": 1756706705381
+      },
+      "reflection": {
+        "count": 1,
+        "lastSeen": 1756706717515,
+        "contexts": [],
+        "firstSeen": 1756706717515
+      },
+      "sp2": {
+        "count": 1,
+        "lastSeen": 1756706717515,
+        "contexts": [],
+        "firstSeen": 1756706717515
+      },
+      "aspects": {
+        "count": 1,
+        "lastSeen": 1756706717515,
+        "contexts": [],
+        "firstSeen": 1756706717515
+      },
+      "s p o2": {
+        "count": 1,
+        "lastSeen": 1756706733010,
+        "contexts": [],
+        "firstSeen": 1756706733010
+      },
+      "impact": {
+        "count": 1,
+        "lastSeen": 1756706733010,
+        "contexts": [],
+        "firstSeen": 1756706733010
+      },
+      "great! if there's": {
+        "count": 1,
+        "lastSeen": 1756706744062,
+        "contexts": [],
+        "firstSeen": 1756706744062
+      },
+      "smartphone": {
+        "count": 1,
+        "lastSeen": 1756706754199,
+        "contexts": [],
+        "firstSeen": 1756706754198
+      },
+      "devices": {
+        "count": 1,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756706788883
+      }
+    },
+    "intents": {
+      "greeting": {
+        "count": 20.74163781812368,
+        "lastSeen": 1756706798649,
+        "contexts": [],
+        "firstSeen": 1756639267966
+      },
+      "statement": {
+        "count": 56.24955900455712,
+        "lastSeen": 1756706797887,
+        "contexts": [],
+        "firstSeen": 1756639267966
+      },
+      "question": {
+        "count": 43.24234288160428,
+        "lastSeen": 1756706798649,
+        "contexts": [],
+        "firstSeen": 1756639270949
+      },
+      "request": {
+        "count": 25.668675497312815,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756639311437
+      },
+      "offer assistance": {
+        "count": 1.9614111263794007,
+        "lastSeen": 1756706768383,
+        "contexts": [],
+        "firstSeen": 1756640480728
+      },
+      "offer help": {
+        "count": 1,
+        "lastSeen": 1756640499883,
+        "contexts": [],
+        "firstSeen": 1756640499883
+      },
+      "invitation": {
+        "count": 1,
+        "lastSeen": 1756705394701,
+        "contexts": [],
+        "firstSeen": 1756705394701
+      }
+    },
+    "emotions": {
+      "neutral": {
+        "count": 5.913692032590399,
+        "lastSeen": 1756706744062,
+        "contexts": [],
+        "firstSeen": 1756639287551
+      },
+      "frustration": {
+        "count": 2.930371166381419,
+        "lastSeen": 1756699291420,
+        "contexts": [],
+        "firstSeen": 1756639345260
+      },
+      "helpful": {
+        "count": 1.9993267724793578,
+        "lastSeen": 1756640480728,
+        "contexts": [],
+        "firstSeen": 1756639346341
+      },
+      "concerned": {
+        "count": 1,
+        "lastSeen": 1756639346341,
+        "contexts": [],
+        "firstSeen": 1756639346341
+      },
+      "open": {
+        "count": 1.9615477168708944,
+        "lastSeen": 1756705394701,
+        "contexts": [],
+        "firstSeen": 1756639346341
+      },
+      "curious": {
+        "count": 1.9657231918220683,
+        "lastSeen": 1756699230364,
+        "contexts": [],
+        "firstSeen": 1756640480728
+      },
+      "curiosity": {
+        "count": 5.946090597227749,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756641225591
+      },
+      "positive": {
+        "count": 1,
+        "lastSeen": 1756699230364,
+        "contexts": [],
+        "firstSeen": 1756699230364
+      },
+      "enthusiasm": {
+        "count": 1.9993235367752242,
+        "lastSeen": 1756700414512,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "openness": {
+        "count": 1,
+        "lastSeen": 1756699274671,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      },
+      "concern": {
+        "count": 1.99999909880572,
+        "lastSeen": 1756700343801,
+        "contexts": [],
+        "firstSeen": 1756700342283
+      },
+      "understanding": {
+        "count": 1,
+        "lastSeen": 1756700343801,
+        "contexts": [],
+        "firstSeen": 1756700343801
+      },
+      "interest": {
+        "count": 1,
+        "lastSeen": 1756700360009,
+        "contexts": [],
+        "firstSeen": 1756700360009
+      },
+      "intrigued": {
+        "count": 1,
+        "lastSeen": 1756700551763,
+        "contexts": [],
+        "firstSeen": 1756700551763
+      },
+      "helpfulness": {
+        "count": 1,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756706788883
+      }
+    },
+    "context": {
+      "casual": {
+        "count": 82.7639985911866,
+        "lastSeen": 1756706798649,
+        "contexts": [],
+        "firstSeen": 1756639267966
+      },
+      "general": {
+        "count": 4.914492790180934,
+        "lastSeen": 1756706744062,
+        "contexts": [],
+        "firstSeen": 1756639287551
+      },
+      "technical": {
+        "count": 18.69754502935762,
+        "lastSeen": 1756706788883,
+        "contexts": [],
+        "firstSeen": 1756640286575
+      },
+      "personal": {
+        "count": 1.9955922496796918,
+        "lastSeen": 1756706715632,
+        "contexts": [],
+        "firstSeen": 1756699274671
+      }
+    }
+  },
+  "recentMessages": [
+    {
+      "text": "Of course! What would you like to discuss? I'm here to help with anything on your mind.",
+      "keywords": {
+        "entities": [],
+        "topics": [],
+        "intents": ["greeting", "offer assistance"],
+        "emotions": [],
+        "context": ["casual"]
+      },
+      "timestamp": 1756706768383,
+      "isUser": false,
+      "emotion": "neutral"
+    },
+    {
+      "text": "yes I am talking about something else",
+      "keywords": {
+        "entities": [],
+        "topics": [],
+        "intents": ["statement"],
+        "emotions": [],
+        "context": ["casual"]
+      },
+      "timestamp": 1756706768448,
+      "isUser": true,
+      "emotion": "neutral"
+    },
+    {
+      "text": "but you need to understand what I am talking about",
+      "keywords": {
+        "entities": [],
+        "topics": [],
+        "intents": ["statement"],
+        "emotions": [],
+        "context": ["casual"]
+      },
+      "timestamp": 1756706775882,
+      "isUser": true,
+      "emotion": "neutral"
+    },
+    {
+      "text": "I understand, and I’m here to help! Could you clarify what you’re referring to? Whether it’s about digital marketing strategies or something else, I’m ready to assist.",
+      "keywords": {
+        "entities": [],
+        "topics": ["digital marketing", "strategies"],
+        "intents": ["request", "statement"],
+        "emotions": [],
+        "context": ["casual"]
+      },
+      "timestamp": 1756706777367,
+      "isUser": false,
+      "emotion": "neutral"
+    },
+    {
+      "text": "yes yes I want you know which was the better",
+      "keywords": {
+        "entities": [],
+        "topics": [],
+        "intents": ["question"],
+        "emotions": [],
+        "context": []
+      },
+      "timestamp": 1756706787166,
+      "isUser": true,
+      "emotion": "neutral"
+    },
+    {
+      "text": "I understand you're looking to compare options. Could you clarify what you're trying to evaluate? Are you comparing digital marketing strategies on platforms like Facebook, or perhaps the effectiveness of different devices like smartphones versus smartwatches? Let me know how I can assist!",
+      "keywords": {
+        "entities": ["Facebook", "smartphones", "smartwatches"],
+        "topics": ["digital marketing", "strategies", "platforms", "devices"],
+        "intents": ["question", "request"],
+        "emotions": ["curiosity", "helpfulness"],
+        "context": ["casual", "technical"]
+      },
+      "timestamp": 1756706788883,
+      "isUser": false,
+      "emotion": "neutral"
+    },
+    {
+      "text": "yes",
+      "keywords": {
+        "entities": [],
+        "topics": [],
+        "intents": ["statement"],
+        "emotions": [],
+        "context": []
+      },
+      "timestamp": 1756706797887,
+      "isUser": true,
+      "emotion": "neutral"
+    },
+    {
+      "text": "Great! How can I assist you today? Are you looking to discuss digital marketing strategies or something specific?",
+      "keywords": {
+        "entities": [],
+        "topics": ["digital marketing", "strategies"],
+        "intents": ["greeting", "question"],
+        "emotions": [],
+        "context": ["casual"]
+      },
+      "timestamp": 1756706798649,
+      "isUser": false,
+      "emotion": "neutral"
+    }
+  ],
+  "session": {
+    "messageCount": 104,
+    "startTime": 1756639220351,
+    "lastActive": 1756706798649,
+    "dominantTopics": [
+      "digital marketing",
+      "strategies",
+      "success",
+      "features",
+      "smartphones"
+    ],
+    "conversationTone": "neutral"
+  }
+}

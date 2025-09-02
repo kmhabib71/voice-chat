@@ -1260,8 +1260,9 @@ function App() {
     debugLog('text_message', 'Text message sent', userMessage);
     
     // Process text message through memory system (non-blocking)
+    const detectedEmotion = detectEmotionFromText(textInput);
     if (conversationMemoryRef.current) {
-      conversationMemoryRef.current.processMessage(textInput, true, 'neutral')
+      conversationMemoryRef.current.processMessage(textInput, true, detectedEmotion)
         .then((result) => {
           if (result.memoryUpdated) {
             setMemoryStats(conversationMemoryRef.current.getMemoryStats());

@@ -123,12 +123,13 @@ class ConversationMemory {
     } catch (error) {
       this.debugLog('Error extracting keywords', error.message);
       
-      // Fallback: basic keyword extraction
+      // Fallback: basic keyword extraction with actual emotion detection
+      const fallbackEmotion = this.detectEmotionFromText(text);
       return {
         entities: [],
         topics: [text.split(' ').slice(0, 3).join(' ')],
         intents: ['statement'],
-        emotions: ['neutral'],
+        emotions: [fallbackEmotion],
         context: ['general']
       };
     }
@@ -354,6 +355,33 @@ class ConversationMemory {
     this.memory = this.initializeMemory();
     this.saveToStorage();
     this.debugLog('Memory cleared');
+  }
+
+  // Simple emotion detection (client-side fallback)
+  detectEmotionFromText(text) {
+    const emotions = {
+      joy: ['happy', 'excited', 'wonderful', 'amazing', 'great', 'fantastic', 'awesome', 'brilliant'],
+      sadness: ['sad', 'depressed', 'unhappy', 'down', 'miserable', 'upset', 'crying'],
+      anger: ['angry', 'mad', 'furious', 'annoyed', 'frustrated', 'irritated', 'hate'],
+      fear: ['scared', 'afraid', 'worried', 'anxious', 'nervous', 'terrified', 'panic'],
+      surprise: ['surprised', 'amazed', 'shocked', 'astonished', 'wow', 'incredible'],
+      love: ['love', 'adore', 'cherish', 'romantic', 'affection', 'heart', 'caring'],
+      neutral: ['okay', 'fine', 'normal', 'regular', 'standard', 'average']
+    };
+
+    const textLower = text.toLowerCase();
+    let detectedEmotion = 'neutral';
+    let maxMatches = 0;
+
+    for (const [emotion, keywords] of Object.entries(emotions)) {
+      const matches = keywords.filter(keyword => textLower.includes(keyword)).length;
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        detectedEmotion = emotion;
+      }
+    }
+
+    return detectedEmotion;
   }
 
   // Export memory for debugging

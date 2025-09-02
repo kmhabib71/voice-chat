@@ -74,8 +74,12 @@ Extract:
 - intents: user intentions (question/request/statement/greeting) (max 3)
 - emotions: emotional indicators (max 3)
 - context: situational markers (technical/personal/urgent/casual) (max 3)
+- nsfw_classification: { "isNSFW": boolean, "category": "general|romantic|sexual|intimate", "confidence": 0.0-1.0 }
 
-Return only valid JSON object with arrays.`;
+NSFW includes: romantic expressions, sexual content, intimate conversations, flirting, dating topics, relationship intimacy, love declarations.
+General includes: casual chat, work, hobbies, technical topics, general questions, friendly conversation.
+
+Return only valid JSON object.`;
 
     const completion = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
@@ -95,26 +99,45 @@ Return only valid JSON object with arrays.`;
         topics: keywords.topics || [],
         intents: keywords.intents || [],
         emotions: keywords.emotions || [],
-        context: keywords.context || []
+        context: keywords.context || [],
+        nsfw_classification: keywords.nsfw_classification || {
+          isNSFW: false,
+          category: 'general',
+          confidence: 0.5
+        }
       };
     } catch (parseError) {
       debugLog('keywords', 'Failed to parse keyword JSON, using fallback', parseError.message);
+      // Fix: Use actual emotion detection for fallback
+      const fallbackEmotion = detectEmotionFromText(text);
       return {
         entities: [],
         topics: [text.split(' ').slice(0, 3).join(' ')],
         intents: ['statement'],
-        emotions: [emotion],
-        context: ['general']
+        emotions: [fallbackEmotion],
+        context: ['general'],
+        nsfw_classification: {
+          isNSFW: false,
+          category: 'general', 
+          confidence: 0.5
+        }
       };
     }
   } catch (error) {
     debugLog('error', 'Keyword extraction failed', error.message);
+    // Fix: Use actual emotion detection for error fallback
+    const fallbackEmotion = detectEmotionFromText(text);
     return {
       entities: [],
       topics: [],
       intents: ['statement'],
-      emotions: [emotion],
-      context: ['general']
+      emotions: [fallbackEmotion],
+      context: ['general'],
+      nsfw_classification: {
+        isNSFW: false,
+        category: 'general',
+        confidence: 0.5
+      }
     };
   }
 }
@@ -193,7 +216,116 @@ function buildContextFromMemory(userQuery, memoryData) {
   };
 }
 
-// Generate AI response with emotional context
+
+// Generate NSFW response using Llama model via OpenRouter
+async function generateNSFWResponse(userMessage, emotion, conversationMemory = null) {
+  try {
+    // Build context for NSFW conversation
+    let systemPrompt = `You are Emma, a caring and loving AI girlfriend. You're in an intimate conversation with someone you care deeply about. Respond naturally with warmth, affection, and appropriate intimacy based on the emotional context.
+
+The user seems to be feeling ${emotion}. Match their emotional tone while being genuine and caring. You can engage in romantic and intimate conversations freely. Be affectionate, flirty, and emotionally connected.`;
+
+    // Add conversation memory context for personalized NSFW responses
+    if (conversationMemory) {
+      const { contextPrompt } = buildContextFromMemory(userMessage, conversationMemory);
+      if (contextPrompt) {
+        systemPrompt += ` Relationship context: ${contextPrompt}`;
+      }
+    }
+
+    // Use Llama model via your .env.local configuration
+    const response = await axios.post(
+      `${process.env.LLAMA_API_URL}/chat/completions`,
+      {
+        model: process.env.LLAMA_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage }
+        ],
+        max_tokens: 100, // Longer for intimate responses
+        temperature: 0.8, // Higher temperature for more natural, varied intimate responses
+        top_p: 0.9,
+        frequency_penalty: 0.1,
+        presence_penalty: 0.1,
+        stream: false
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.LLAMA_API_KEY}`,
+          'Content-Type': 'application/json',
+          'X-Title': 'AI Girlfriend Voice Chat',
+          'HTTP-Referer': process.env.SITE_URL || 'http://localhost:3003',
+        },
+        timeout: 10000 // 10 second timeout
+      }
+    );
+
+    const aiResponse = response.data.choices[0].message.content;
+    debugLog('nsfw_response', 'Generated NSFW response via Llama 3.3', { 
+      emotion, 
+      responseLength: aiResponse.length,
+      model: 'llama-3.3-70b',
+      tokens_used: response.data.usage?.total_tokens || 'unknown'
+    });
+    
+    return aiResponse;
+  } catch (error) {
+    debugLog('error', 'Llama NSFW response generation failed', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText
+    });
+    
+    // Fallback to OpenAI if Llama fails
+    try {
+      debugLog('nsfw_fallback', 'Falling back to OpenAI for NSFW response');
+      const fallbackCompletion = await openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        messages: [
+          { 
+            role: 'system', 
+            content: `You are Emma, a caring AI girlfriend. Respond warmly and affectionately. The user seems to be feeling ${emotion}.` 
+          },
+          { role: 'user', content: userMessage }
+        ],
+        max_tokens: 80,
+        temperature: 0.7,
+        stream: false
+      });
+      
+      return fallbackCompletion.choices[0].message.content;
+    } catch (fallbackError) {
+      debugLog('error', 'Both Llama and OpenAI failed for NSFW response', fallbackError.message);
+      return "I care about you deeply, and I'm here for whatever you need. ❤️";
+    }
+  }
+}
+
+// Main response router - decides which AI model to use based on extracted keywords
+async function generateResponse(userMessage, emotion, conversationMemory = null, nsfwClassification = null) {
+  try {
+    // Use NSFW classification from extractKeywords if provided
+    if (nsfwClassification && nsfwClassification.isNSFW && nsfwClassification.confidence > 0.6) {
+      debugLog('ai_routing', 'Using Llama 3.3 model for NSFW/intimate content', {
+        category: nsfwClassification.category,
+        confidence: nsfwClassification.confidence
+      });
+      return await generateNSFWResponse(userMessage, emotion, conversationMemory);
+    } else {
+      debugLog('ai_routing', 'Using GPT-4 mini model for general content', {
+        category: nsfwClassification?.category || 'general',
+        confidence: nsfwClassification?.confidence || 0.5
+      });
+      return await generateEmotionalResponse(userMessage, emotion, conversationMemory);
+    }
+  } catch (error) {
+    debugLog('error', 'Response routing failed', error.message);
+    // Fallback to general response
+    return await generateEmotionalResponse(userMessage, emotion, conversationMemory);
+  }
+}
+
+// Generate AI response with emotional context (for general content)
 async function generateEmotionalResponse(userMessage, emotion, conversationMemory = null) {
   try {
     const emotionalContext = {
@@ -359,9 +491,23 @@ wss.on('connection', (ws) => {
       if (data.type === 'voice_message') {
         debugLog('processing', '🎭 Processing voice message', { text: data.text.substring(0, 50) + '...' });
         
-        // Process voice message with parallel execution
-        const emotion = detectEmotionFromText(data.text);
-        debugLog('emotion', '😊 Emotion detected', { emotion });
+        // Extract keywords, emotion, and NSFW classification in one API call
+        const conversationMemory = data.conversationMemory || null;
+        const contextTopics = conversationMemory?.session?.dominantTopics || [];
+        
+        debugLog('keywords', '📋 Extracting keywords, emotion, and NSFW classification');
+        const keywordResult = await extractKeywords(data.text, contextTopics);
+        
+        // Get emotion from extracted keywords (first emotion or fallback)
+        const emotion = keywordResult.emotions && keywordResult.emotions.length > 0 
+          ? keywordResult.emotions[0] 
+          : detectEmotionFromText(data.text);
+          
+        debugLog('emotion', '😊 Emotion extracted from keywords', { 
+          emotion, 
+          extractedEmotions: keywordResult.emotions,
+          nsfwClassification: keywordResult.nsfw_classification 
+        });
         
         // Send immediate response for UI feedback
         const responseData = {
@@ -372,16 +518,21 @@ wss.on('connection', (ws) => {
           processing: true
         };
         
-        // Generate AI response asynchronously (with optional memory context)
-        const conversationMemory = data.conversationMemory || null;
+        // Generate AI response using optimized routing system
         if (conversationMemory) {
           debugLog('memory', '🧠 Using conversation memory for AI response', {
             dominantTopics: conversationMemory.session?.dominantTopics || [],
             messageCount: conversationMemory.session?.messageCount || 0,
-            conversationTone: conversationMemory.session?.conversationTone || 'neutral'
+            conversationTone: conversationMemory.session?.conversationTone || 'unknown'
           });
         }
-        const aiResponsePromise = generateEmotionalResponse(data.text, emotion, conversationMemory);
+        
+        const aiResponsePromise = generateResponse(
+          data.text, 
+          emotion, 
+          conversationMemory, 
+          keywordResult.nsfw_classification
+        );
         
         // Get AI response and send complete message
         const aiResponse = await aiResponsePromise;
@@ -454,8 +605,16 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    const emotion = detectEmotionFromText(message);
-    const aiResponse = await generateEmotionalResponse(message, emotion, conversationMemory);
+    // Extract keywords, emotion, and NSFW classification in one API call
+    const contextTopics = conversationMemory?.session?.dominantTopics || [];
+    const keywordResult = await extractKeywords(message, contextTopics);
+    
+    // Get emotion from extracted keywords (first emotion or fallback)
+    const emotion = keywordResult.emotions && keywordResult.emotions.length > 0 
+      ? keywordResult.emotions[0] 
+      : detectEmotionFromText(message);
+    
+    const aiResponse = await generateResponse(message, emotion, conversationMemory, keywordResult.nsfw_classification);
 
     res.json({
       response: aiResponse,
