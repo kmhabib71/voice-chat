@@ -110,12 +110,61 @@
 4. **Fourth**: Implement new Memory v2 and Emotional Intelligence features
 5. **Fifth**: Optimize and clean up legacy code
 
+## Documentation Organization Rules
+
+### .md File Structure (MANDATORY)
+```
+/docs
+├── /architecture       # ARCH_ - System design documents
+├── /implementation     # IMPL_ - Development guides  
+├── /business          # BIZ_ - Business strategy
+├── /progress          # PROG_ - Status tracking
+└── /guides            # GUIDE_ - User/dev guides
+```
+
+### Documentation Rules
+- **NEVER** create .md files in project root (except README.md, CLAUDE.md)
+- **ALWAYS** place documentation in appropriate /docs subfolder
+- **ALWAYS** use category prefixes: ARCH_, IMPL_, BIZ_, PROG_, GUIDE_
+- **ALWAYS** include standard header with date, status, dependencies
+- **ALWAYS** update "Last Updated" date when modifying documents
+
+### Document Naming Convention
+- Format: `[PREFIX]_[FEATURE]_[PURPOSE].md`
+- Examples: `IMPL_MEMORY_V2_PLAN.md`, `PROG_PHASE_1_STATUS.md`
+- Use status suffixes: `_PLAN`, `_WIP`, `_COMPLETED`, `_DRAFT`, `_DEPRECATED`
+- Include version numbers: `_v1`, `_v2` for major revisions
+
+### Document Headers (MANDATORY)
+```markdown
+# [Document Title]
+## [Subtitle/Purpose]
+
+**Created**: YYYY-MM-DD  
+**Last Updated**: YYYY-MM-DD  
+**Status**: Draft|WIP|Completed|Deprecated  
+**Category**: Architecture|Implementation|Business|Progress|Guide  
+**Dependencies**: [List related docs]
+
+> **Purpose**: [Brief description]
+
+---
+```
+
+### Documentation Maintenance
+- Update master index in `/docs/README.md` when adding new documents
+- Archive deprecated documents to `/docs/archive/`
+- Review and update documentation every 2 weeks
+- Link related documents in "Related Documents" section
+- Use consistent markdown formatting throughout
+
 ## Quality Gates
 - All code must follow established architecture
 - No file should exceed 300 lines (split if needed)
 - Each function should have single responsibility
 - All external dependencies must be properly abstracted
 - Performance requirements must be met before deployment
+- All documentation must be properly organized in /docs structure
 
 ## Forbidden Patterns
 - ❌ Direct database calls from Feature layer
@@ -126,6 +175,8 @@
 - ❌ Circular dependencies between layers
 - ❌ Global variables for state management
 - ❌ Synchronous database operations
+- ❌ .md files in project root (except README.md, CLAUDE.md)
+- ❌ Documentation without proper headers and categorization
 
 ## Encouraged Patterns  
 - ✅ Dependency injection for testability
@@ -135,5 +186,7 @@
 - ✅ Chain of responsibility for message processing
 - ✅ Command pattern for user actions
 - ✅ Repository pattern for data access
+- ✅ Organized documentation with clear categorization
+- ✅ Consistent naming conventions across all files
 
-This architecture ensures the AI girlfriend system remains maintainable, scalable, and prevents the "messy codebase" problem during Memory v2 + Emotional Intelligence development.
+This architecture ensures the AI girlfriend system remains maintainable, scalable, and prevents both "messy codebase" and "messy documentation" problems during Memory v2 + Emotional Intelligence development.
