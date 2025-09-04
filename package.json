@@ -6,12 +6,18 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "client": "cd client && npm start",
-    "dev:client": "cd client && npm run dev",
-    "install:client": "cd client && npm install",
-    "build": "cd client && npm run build",
-    "setup": "npm install && cd client && npm install && cd ..",
-    "start:both": "concurrently \"npm run dev\" \"npm run dev:client\""
+    "client": "cd client-nextjs && npm run dev",
+    "dev:client": "cd client-nextjs && npm run dev",
+    "client:legacy": "cd client && npm start",
+    "dev:legacy": "cd client && npm run dev",
+    "install:client": "cd client-nextjs && npm install",
+    "install:legacy": "cd client && npm install",
+    "build": "cd client-nextjs && npm run build",
+    "build:legacy": "cd client && npm run build",
+    "setup": "npm install && cd client-nextjs && npm install && cd ..",
+    "setup:legacy": "npm install && cd client && npm install && cd ..",
+    "start:both": "concurrently \"npm run dev\" \"npm run dev:client\"",
+    "start:legacy": "concurrently \"npm run dev\" \"npm run dev:legacy\""
   },
   "dependencies": {
     "axios": "^1.6.2",

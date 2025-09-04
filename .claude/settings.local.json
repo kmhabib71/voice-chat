@@ -5,7 +5,12 @@
       "Bash(chmod:*)",
       "Bash(mkdir:*)",
       "Bash(npm install:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(npx create-next-app:*)",
+      "Bash(tree:*)",
+      "Bash(pkill:*)",
+      "Bash(node:*)",
+      "Bash(powershell.exe:*)"
     ],
     "deny": [],
     "ask": []
