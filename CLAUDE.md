@@ -158,6 +158,13 @@
 - Link related documents in "Related Documents" section
 - Use consistent markdown formatting throughout
 
+### Document Lifecycle Management
+- **Archive outdated docs** to `/docs/archive/` instead of deleting
+- **One-time documents** (migration scripts, setup guides) → archive after completion
+- **Superseded documents** → archive when replaced by newer versions
+- **Duplicate content** → archive redundant copies
+- **Update archive README** when moving documents
+
 ## Quality Gates
 - All code must follow established architecture
 - No file should exceed 300 lines (split if needed)

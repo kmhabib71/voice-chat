@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import './App.css';
 import ConversationMemory from './utils/conversationMemory';
 
@@ -25,7 +26,7 @@ function App() {
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
-  const wsRef = useRef(null);
+  const socketRef = useRef(null);
   const audioRef = useRef(null);
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
@@ -35,7 +36,7 @@ function App() {
   const streamRef = useRef(null);
   const isContinuousModeRef = useRef(false); // Immediate state tracking
   const connectionAttemptRef = useRef(false); // Prevent duplicate connections
-  const connectWebSocketRef = useRef(null); // Store connection function
+  const connectSocketRef = useRef(null); // Store connection function
   const chatContainerRef = useRef(null); // Reference to chat container for scrolling
   
   // Conversation Memory System (non-intrusive)
@@ -92,58 +93,50 @@ function App() {
     }
   }, []);
 
-  // Initialize WebSocket connection
+  // Initialize Socket.io connection
   useEffect(() => {
     let isComponentMounted = true;
     let reconnectTimeout = null;
     
-    const connectWebSocket = () => {
+    const connectSocket = () => {
       // Prevent multiple simultaneous connection attempts
       if (connectionAttemptRef.current) {
-        debugLog('websocket', 'Connection attempt already in progress, skipping');
+        debugLog('socketio', 'Connection attempt already in progress, skipping');
         return;
       }
       
       // Prevent multiple connections in development mode
-      if (wsRef.current) {
-        const currentState = wsRef.current.readyState;
-        if (currentState === WebSocket.CONNECTING || currentState === WebSocket.OPEN) {
-          debugLog('websocket', `WebSocket already connecting/connected (state: ${currentState}), skipping`);
-          return;
-        }
-        // Close existing connection if it's in a bad state
-        if (currentState === WebSocket.CLOSING || currentState === WebSocket.CLOSED) {
-          debugLog('websocket', 'Cleaning up previous WebSocket connection');
-          wsRef.current = null;
-        }
+      if (socketRef.current && socketRef.current.connected) {
+        debugLog('socketio', 'Socket.io already connected, skipping');
+        return;
       }
       
       connectionAttemptRef.current = true;
-      debugLog('websocket', 'Attempting to connect to ws://localhost:3002');
+      debugLog('socketio', 'Attempting to connect to http://localhost:3002');
       
       try {
-        const ws = new WebSocket('ws://localhost:3002');
+        const socket = io('http://localhost:3002', {
+          transports: ['websocket', 'polling'], // WebSocket preferred, polling fallback
+          timeout: 5000,
+          reconnection: true,
+          reconnectionDelay: 3000,
+          reconnectionDelayMax: 30000,
+          maxReconnectionAttempts: 5
+        });
         
-        // Set a connection timeout
-        const connectionTimeout = setTimeout(() => {
-          if (ws.readyState === WebSocket.CONNECTING) {
-            debugLog('websocket', 'Connection timeout, closing WebSocket');
-            ws.close();
-            connectionAttemptRef.current = false;
-          }
-        }, 5000); // 5 second timeout
-        
-        ws.onopen = () => {
-          clearTimeout(connectionTimeout);
+        socket.on('connect', () => {
           connectionAttemptRef.current = false;
           
           if (!isComponentMounted) {
-            debugLog('websocket', 'Component unmounted, closing connection');
-            ws.close();
+            debugLog('socketio', 'Component unmounted, disconnecting');
+            socket.disconnect();
             return;
           }
           
-          debugLog('websocket', 'Connected to voice assistant successfully');
+          debugLog('socketio', 'Connected to voice assistant successfully', { 
+            socketId: socket.id,
+            transport: socket.io.engine.transport.name
+          });
           setIsConnected(true);
           setStatus('Connected - Ready to chat!');
           
@@ -152,128 +145,124 @@ function App() {
             clearTimeout(reconnectTimeout);
             reconnectTimeout = null;
           }
-        };
+        });
         
-        ws.onmessage = (event) => {
+        socket.on('ai_response', (data) => {
           if (!isComponentMounted) return;
           
-          try {
-            const data = JSON.parse(event.data);
-            debugLog('websocket', 'Received message from server', data);
-            
-            if (data.type === 'ai_response') {
-              // Immediate feedback - stop loading state
-              setIsAIResponding(false);
-              setStatus('Connected - Ready to chat!');
-              
-              debugLog('ai_response', 'Received AI response', {
-                text: data.text,
-                emotion: data.emotion,
-                timestamp: data.timestamp
+          debugLog('socketio', 'Received AI response', {
+            text: data.text,
+            emotion: data.emotion,
+            timestamp: data.timestamp
+          });
+          
+          // Immediate feedback - stop loading state
+          setIsAIResponding(false);
+          setStatus('Connected - Ready to chat!');
+          
+          // Add message immediately for instant UI update
+          setMessages(prev => [...prev, {
+            text: data.text,
+            isUser: false,
+            emotion: data.emotion,
+            timestamp: data.timestamp
+          }]);
+          setCurrentEmotion(data.emotion);
+          
+          // Process AI response through memory system (non-blocking)
+          if (conversationMemoryRef.current) {
+            conversationMemoryRef.current.processMessage(data.text, false, data.emotion)
+              .then((result) => {
+                if (result.memoryUpdated) {
+                  setMemoryStats(conversationMemoryRef.current.getMemoryStats());
+                  debugLog('memory', 'AI response processed in memory', result);
+                }
+              })
+              .catch((error) => {
+                debugLog('error', 'Memory processing failed for AI response', error.message);
               });
-              
-              // Add message immediately for instant UI update
-              setMessages(prev => [...prev, {
-                text: data.text,
-                isUser: false,
-                emotion: data.emotion,
-                timestamp: data.timestamp
-              }]);
-              setCurrentEmotion(data.emotion);
-              
-              // Process AI response through memory system (non-blocking)
-              if (conversationMemoryRef.current) {
-                conversationMemoryRef.current.processMessage(data.text, false, data.emotion)
-                  .then((result) => {
-                    if (result.memoryUpdated) {
-                      setMemoryStats(conversationMemoryRef.current.getMemoryStats());
-                      debugLog('memory', 'AI response processed in memory', result);
-                    }
-                  })
-                  .catch((error) => {
-                    debugLog('error', 'Memory processing failed for AI response', error.message);
-                  });
-              }
-            } else if (data.type === 'audio_response') {
-              debugLog('audio', 'Received audio response', {
-                audioLength: data.audio?.length || 0,
-                emotion: data.emotion
-              });
-              playAudio(data.audio);
-            } else if (data.type === 'error') {
-              debugLog('error', 'Server error received', data.message);
-              // Don't show audio errors to user - text response is sufficient
-              if (!data.message.includes('audio')) {
-                setStatus(`Error: ${data.message}`);
-              }
-            }
-          } catch (error) {
-            debugLog('error', 'Error parsing WebSocket message', error);
           }
-        };
+        });
         
-        ws.onclose = (event) => {
-          clearTimeout(connectionTimeout);
+        socket.on('audio_response', (data) => {
+          if (!isComponentMounted) return;
+          
+          debugLog('audio', 'Received audio response', {
+            audioLength: data.audio?.length || 0,
+            emotion: data.emotion
+          });
+          playAudio(data.audio);
+        });
+        
+        socket.on('error', (data) => {
+          debugLog('error', 'Server error received', data.message);
+          // Don't show audio errors to user - text response is sufficient
+          if (!data.message.includes('audio')) {
+            setStatus(`Error: ${data.message}`);
+          }
+        });
+        
+        socket.on('disconnect', (reason) => {
           connectionAttemptRef.current = false;
           
           if (!isComponentMounted) {
-            debugLog('websocket', 'Component unmounted, not attempting reconnect');
+            debugLog('socketio', 'Component unmounted, not attempting reconnect');
             return;
           }
           
-          debugLog('websocket', `WebSocket closed (code: ${event.code}, reason: ${event.reason})`);
+          debugLog('socketio', `Socket.io disconnected (reason: ${reason})`);
           setIsConnected(false);
           
-          // Only attempt reconnect for unexpected closures
-          if (event.code !== 1000 && event.code !== 1001) { // Not normal or going away
-            setStatus('Disconnected - Trying to reconnect...');
-            
-            // Exponential backoff for reconnection
-            const delay = Math.min(3000 * Math.pow(1.5, (reconnectTimeout ? 1 : 0)), 30000);
-            
-            reconnectTimeout = setTimeout(() => {
-              if (isComponentMounted && !isContinuousModeRef.current) {
-                debugLog('websocket', `Attempting reconnection after ${delay}ms`);
-                connectWebSocket();
-              }
-            }, delay);
-          } else {
+          // Socket.io handles automatic reconnection by default
+          // Only set status for user feedback
+          if (reason === 'io server disconnect' || reason === 'io client disconnect') {
             setStatus('Connection closed');
+          } else {
+            setStatus('Disconnected - Trying to reconnect...');
           }
-        };
+        });
         
-        ws.onerror = (error) => {
-          clearTimeout(connectionTimeout);
+        socket.on('connect_error', (error) => {
           connectionAttemptRef.current = false;
           
-          debugLog('error', 'WebSocket connection error', {
-            readyState: ws.readyState,
-            url: ws.url,
-            error: error.type
+          debugLog('error', 'Socket.io connection error', {
+            message: error.message,
+            type: error.type
           });
           
           setStatus('Connection error - Check if server is running');
-          
-          // Don't attempt immediate reconnection on error
-          // Let the onclose handler manage reconnection
-        };
+        });
         
-        wsRef.current = ws;
+        socket.on('reconnect', (attemptNumber) => {
+          debugLog('socketio', `Reconnected after ${attemptNumber} attempts`);
+          setStatus('Reconnected - Ready to chat!');
+        });
+        
+        socket.on('reconnect_attempt', (attemptNumber) => {
+          debugLog('socketio', `Reconnection attempt ${attemptNumber}`);
+        });
+        
+        socket.on('reconnect_failed', () => {
+          debugLog('socketio', 'Reconnection failed - max attempts reached');
+          setStatus('Connection failed - Please refresh the page');
+        });
+        
+        socketRef.current = socket;
         
       } catch (error) {
         connectionAttemptRef.current = false;
-        debugLog('error', 'Error creating WebSocket connection', error);
+        debugLog('error', 'Error creating Socket.io connection', error);
         setStatus('Failed to create connection');
       }
     };
 
     // Store the connection function so it can be called from outside
-    connectWebSocketRef.current = connectWebSocket;
+    connectSocketRef.current = connectSocket;
 
     // Initial connection attempt with a small delay to ensure component is mounted
     const initialConnectionTimeout = setTimeout(() => {
       if (isComponentMounted) {
-        connectWebSocket();
+        connectSocket();
       }
     }, 100);
     
@@ -289,16 +278,11 @@ function App() {
       // Reset connection attempt flag
       connectionAttemptRef.current = false;
       
-      // Close WebSocket connection
-      if (wsRef.current) {
-        // Set to closing state to prevent reconnection
-        const ws = wsRef.current;
-        wsRef.current = null;
-        
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          debugLog('websocket', 'Closing WebSocket connection on cleanup');
-          ws.close(1000, 'Component unmounting');
-        }
+      // Close Socket.io connection
+      if (socketRef.current) {
+        debugLog('socketio', 'Disconnecting Socket.io connection on cleanup');
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
       
       // Cleanup continuous mode resources
@@ -463,16 +447,16 @@ function App() {
   };
 
   // Manual reconnection function
-  const reconnectWebSocket = () => {
-    debugLog('websocket', 'Manual reconnection requested');
+  const reconnectSocket = () => {
+    debugLog('socketio', 'Manual reconnection requested');
     
     // Reset connection attempt flag
     connectionAttemptRef.current = false;
     
     // Close existing connection if any
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'Manual reconnection');
-      wsRef.current = null;
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
     }
     
     // Reset states
@@ -481,8 +465,8 @@ function App() {
     
     // Attempt new connection after a short delay
     setTimeout(() => {
-      if (connectWebSocketRef.current) {
-        connectWebSocketRef.current();
+      if (connectSocketRef.current) {
+        connectSocketRef.current();
       }
     }, 500);
   };
@@ -895,8 +879,8 @@ function App() {
           });
       }
       
-      // Send to WebSocket for AI response with optimized payload
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Send to Socket.io for AI response with optimized payload
+      if (socketRef.current && socketRef.current.connected) {
         // Build conversation memory context
         let conversationMemory = null;
         if (conversationMemoryRef.current) {
@@ -905,20 +889,19 @@ function App() {
         }
         
         const messageData = {
-          type: 'voice_message',
           text: transcript,
           emotion: emotion,
           timestamp: Date.now(), // Add timestamp for latency tracking
           conversationMemory: conversationMemory // Include memory context
         };
-        debugLog('websocket', 'Sending continuous transcript with memory to server', { 
+        debugLog('socketio', 'Sending continuous transcript with memory to server', { 
           text: transcript, 
           emotion,
           memoryTopics: conversationMemory?.session?.dominantTopics || []
         });
-        wsRef.current.send(JSON.stringify(messageData));
+        socketRef.current.emit('voice_message', messageData);
       } else {
-        debugLog('error', 'WebSocket not connected for continuous mode');
+        debugLog('error', 'Socket.io not connected for continuous mode');
       }
       
     } catch (error) {
@@ -1021,9 +1004,9 @@ function App() {
       // Start continuous mode
       debugLog('continuous', 'Starting continuous mode');
       
-      // Ensure we have a stable WebSocket connection
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        debugLog('error', `Cannot start continuous mode - WebSocket state: ${wsRef.current?.readyState || 'null'}`);
+      // Ensure we have a stable Socket.io connection
+      if (!socketRef.current || !socketRef.current.connected) {
+        debugLog('error', 'Cannot start continuous mode - Socket.io not connected');
         setStatus('Error: Not connected to server - Check connection');
         return;
       }
@@ -1176,8 +1159,8 @@ function App() {
           });
       }
       
-      // Send to WebSocket for AI response
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Send to Socket.io for AI response
+      if (socketRef.current && socketRef.current.connected) {
         // Build conversation memory context
         let conversationMemory = null;
         if (conversationMemoryRef.current) {
@@ -1186,19 +1169,18 @@ function App() {
         }
         
         const messageData = {
-          type: 'voice_message',
           text: transcription.text,
           emotion: transcription.emotion,
           conversationMemory: conversationMemory // Include memory context
         };
-        debugLog('websocket', 'Sending transcribed message with memory to server', {
+        debugLog('socketio', 'Sending transcribed message with memory to server', {
           text: transcription.text,
           emotion: transcription.emotion,
           memoryTopics: conversationMemory?.session?.dominantTopics || []
         });
-        wsRef.current.send(JSON.stringify(messageData));
+        socketRef.current.emit('voice_message', messageData);
       } else {
-        debugLog('error', 'WebSocket not connected', { readyState: wsRef.current?.readyState });
+        debugLog('error', 'Socket.io not connected');
       }
       
       setStatus('Ready to chat');
@@ -1274,7 +1256,7 @@ function App() {
         });
     }
     
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (socketRef.current && socketRef.current.connected) {
       // Build conversation memory context
       let conversationMemory = null;
       if (conversationMemoryRef.current) {
@@ -1283,17 +1265,16 @@ function App() {
       }
       
       const messageData = {
-        type: 'voice_message',
         text: textInput,
         conversationMemory: conversationMemory // Include memory context
       };
-      debugLog('websocket', 'Sending text message with memory to server', {
+      debugLog('socketio', 'Sending text message with memory to server', {
         text: textInput,
         memoryTopics: conversationMemory?.session?.dominantTopics || []
       });
-      wsRef.current.send(JSON.stringify(messageData));
+      socketRef.current.emit('voice_message', messageData);
     } else {
-      debugLog('error', 'Cannot send text message - WebSocket not connected');
+      debugLog('error', 'Cannot send text message - Socket.io not connected');
     }
     
     setTextInput('');
@@ -1339,7 +1320,7 @@ function App() {
         Status: {status} {isConnected ? '🟢' : '🔴'}
         {!isConnected && (
           <button 
-            onClick={reconnectWebSocket}
+            onClick={reconnectSocket}
             className="retry-button"
           >
             Retry
@@ -1444,7 +1425,7 @@ function App() {
       <div className="debug-panel">
         <strong>🐛 Debug Info</strong>
         <div>Connection: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}</div>
-        <div>WebSocket State: {wsRef.current ? wsRef.current.readyState : 'null'}</div>
+        <div>Socket.io State: {socketRef.current ? (socketRef.current.connected ? 'Connected' : 'Disconnected') : 'null'}</div>
         <div>Recording: {isRecording ? '🎤 Recording' : '⏹️ Stopped'}</div>
         <div>Continuous: {isContinuousMode ? '🔄 Active' : '⏸️ Inactive'}</div>
         <div>AI Status: {isAIResponding ? '⏳ Thinking' : '✅ Ready'}</div>

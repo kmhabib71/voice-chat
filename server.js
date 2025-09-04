@@ -13,7 +13,7 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const WebSocket = require('ws');
+const { Server } = require('socket.io');
 const http = require('http');
 
 // Load configuration and validate environment
@@ -26,7 +26,14 @@ const voiceController = require('./lib/features/voice/VoiceController');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const io = new Server(server, {
+  cors: {
+    origin: config.server.corsOrigin,
+    credentials: true
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000
+});
 
 // Middleware
 app.use(cors({
@@ -44,93 +51,114 @@ const upload = multer({
   },
 });
 
-// WebSocket handling for real-time communication
-wss.on('connection', (ws) => {
-  debugLog('websocket', '🔌 New WebSocket connection established');
+// Socket.io handling for real-time communication
+io.on('connection', (socket) => {
+  debugLog('socketio', '🔌 New Socket.io connection established', { socketId: socket.id });
   
   // Generate session ID for this connection
   const { generateSessionId } = require('./lib/utils/helpers');
   const sessionId = generateSessionId();
-  ws.sessionId = sessionId;
-  debugLog('websocket', 'Assigned session ID', { sessionId });
+  socket.sessionId = sessionId;
+  debugLog('socketio', 'Assigned session ID', { sessionId, socketId: socket.id });
   
-  // Set TCP_NODELAY for lower latency
-  ws._socket.setNoDelay(true);
-  
-  ws.on('message', async (message) => {
+  // Handle voice messages
+  socket.on('voice_message', async (data) => {
     const startTime = Date.now();
     
     try {
-      const data = JSON.parse(message);
-      debugLog('websocket', '📨 Received message from client', { type: data.type, textLength: data.text?.length });
+      debugLog('socketio', '📨 Received voice message', { 
+        type: data.type, 
+        textLength: data.text?.length,
+        socketId: socket.id
+      });
       
-      if (data.type === 'voice_message') {
-        debugLog('processing', '🎭 Processing voice message', { sessionId, text: data.text.substring(0, 50) + '...' });
-        
-        const conversationMemory = data.conversationMemory || null;
-        
-        // Process message through chat controller
-        const chatResponse = await chatController.processMessage(data.text, sessionId, conversationMemory);
-        
-        // Send AI response
-        const responseData = {
-          type: 'ai_response',
-          text: chatResponse.response,
-          emotion: chatResponse.emotion,
-          timestamp: new Date().toISOString(),
-          processing: false
-        };
-        
-        ws.send(JSON.stringify(responseData));
-        
-        const responseTime = Date.now() - startTime;
-        debugLog('websocket', '📤 Sent AI response to client', { 
-          responseTime: `${responseTime}ms`,
-          emotion: chatResponse.emotion,
-          textLength: chatResponse.response.length
-        });
-        
-        // Generate speech audio in parallel
-        const audioPromise = (async () => {
-          try {
-            debugLog('audio', '🔊 Generating speech audio (parallel)', { emotion: chatResponse.emotion });
-            const audioStartTime = Date.now();
-            const audioBuffer = await voiceController.generateSpeech(chatResponse.response, chatResponse.emotion);
-            const audioGenerationTime = Date.now() - audioStartTime;
-            
-            const audioResponse = {
-              type: 'audio_response',
-              audio: audioBuffer.toString('base64'),
-              emotion: chatResponse.emotion
-            };
-            ws.send(JSON.stringify(audioResponse));
-            debugLog('audio', '✅ Audio response sent', { 
-              audioSize: audioBuffer.length, 
-              emotion: chatResponse.emotion,
-              generationTime: `${audioGenerationTime}ms`
-            });
-          } catch (audioError) {
-            debugLog('error', '❌ Error generating audio', {
-              message: audioError.message
-            });
-            // Don't send error to client - just skip audio for better UX
-            debugLog('audio', '⚠️ Skipping audio due to API issue - text response already sent');
-          }
-        })();
-        
-        // Don't await audio generation - let it happen in background
-      }
+      debugLog('processing', '🎭 Processing voice message', { 
+        sessionId, 
+        text: data.text.substring(0, 50) + '...',
+        socketId: socket.id
+      });
+      
+      const conversationMemory = data.conversationMemory || null;
+      
+      // Process message through chat controller
+      const chatResponse = await chatController.processMessage(data.text, sessionId, conversationMemory);
+      
+      // Send AI response
+      const responseData = {
+        text: chatResponse.response,
+        emotion: chatResponse.emotion,
+        timestamp: new Date().toISOString(),
+        processing: false
+      };
+      
+      socket.emit('ai_response', responseData);
+      
+      const responseTime = Date.now() - startTime;
+      debugLog('socketio', '📤 Sent AI response to client', { 
+        responseTime: `${responseTime}ms`,
+        emotion: chatResponse.emotion,
+        textLength: chatResponse.response.length,
+        socketId: socket.id
+      });
+      
+      // Generate speech audio in parallel
+      const audioPromise = (async () => {
+        try {
+          debugLog('audio', '🔊 Generating speech audio (parallel)', { 
+            emotion: chatResponse.emotion,
+            socketId: socket.id
+          });
+          const audioStartTime = Date.now();
+          const audioBuffer = await voiceController.generateSpeech(chatResponse.response, chatResponse.emotion);
+          const audioGenerationTime = Date.now() - audioStartTime;
+          
+          const audioResponse = {
+            audio: audioBuffer.toString('base64'),
+            emotion: chatResponse.emotion
+          };
+          socket.emit('audio_response', audioResponse);
+          debugLog('audio', '✅ Audio response sent', { 
+            audioSize: audioBuffer.length, 
+            emotion: chatResponse.emotion,
+            generationTime: `${audioGenerationTime}ms`,
+            socketId: socket.id
+          });
+        } catch (audioError) {
+          debugLog('error', '❌ Error generating audio', {
+            message: audioError.message,
+            socketId: socket.id
+          });
+          // Don't send error to client - just skip audio for better UX
+          debugLog('audio', '⚠️ Skipping audio due to API issue - text response already sent');
+        }
+      })();
+      
+      // Don't await audio generation - let it happen in background
     } catch (error) {
-      debugLog('error', '💥 WebSocket message error', error.message);
-      ws.send(JSON.stringify({
-        type: 'error',
+      debugLog('error', '💥 Socket.io message error', { 
+        error: error.message,
+        socketId: socket.id
+      });
+      socket.emit('error', {
         message: 'Server error processing message'
-      }));
+      });
     }
   });
   
-  ws.on('close', () => {
-    debugLog('websocket', '🔌 WebSocket connection closed');
+  socket.on('disconnect', (reason) => {
+    debugLog('socketio', '🔌 Socket.io connection closed', { 
+      reason,
+      socketId: socket.id,
+      sessionId: socket.sessionId
+    });
+  });
+  
+  socket.on('error', (error) => {
+    debugLog('error', '❌ Socket.io connection error', {
+      error: error.message,
+      socketId: socket.id,
+      sessionId: socket.sessionId
+    });
   });
 });
 
@@ -313,7 +341,7 @@ app.get('/api/health', (req, res) => {
 server.listen(config.server.port, () => {
   debugLog('server', '🚀 Emotional Voice Assistant Server starting');
   debugLog('server', `🎤 HTTP Server running on http://localhost:${config.server.port}`);
-  debugLog('server', `🌐 WebSocket server running on ws://localhost:${config.server.port}`);
+  debugLog('server', `🌐 Socket.io server running on http://localhost:${config.server.port}`);
   debugLog('server', `🔊 ElevenLabs integration: ${config.elevenlabs.apiKey ? '✅ Connected' : '❌ Missing API key'}`);
   debugLog('server', `🤖 OpenAI integration: ${config.openai.apiKey ? '✅ Connected' : '❌ Missing API key'}`);
   debugLog('server', `🦙 Llama integration: ${config.llama.apiKey ? '✅ Connected' : '❌ Not configured'}`);

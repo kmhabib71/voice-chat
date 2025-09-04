@@ -38,9 +38,13 @@
 ### 📖 **Developer & User Guides**
 - [Development Setup](./guides/GUIDE_DEVELOPMENT_SETUP.md) - Environment configuration
 - [API Documentation](./guides/GUIDE_API_USAGE.md) - REST API and WebSocket usage
+- [System Migration Guide](./guides/GUIDE_SYSTEM_MIGRATION.md) - localStorage to MongoDB migration
 - [Deployment Guide](./guides/GUIDE_DEPLOYMENT.md) - Production deployment procedures
 - [Troubleshooting](./guides/GUIDE_TROUBLESHOOTING.md) - Common issues and solutions
 - [User Manual](./guides/GUIDE_USER_MANUAL.md) - End-user documentation
+
+### 📁 **Archive**
+- [Archived Documents](./archive/README.md) - Outdated and completed documentation
 
 ---
 
@@ -90,7 +94,7 @@ All documentation follows structured templates with:
 - Change logs for version tracking
 - Status indicators (Draft, WIP, Completed, Deprecated)
 
-See [Documentation Organization](./DOC_ORGANIZATION.md) for complete standards and migration plan.
+See [Documentation Organization](./DOC_ORGANIZATION.md) for complete standards. Outdated documents are automatically archived to maintain clean structure.
 
 ---
 
