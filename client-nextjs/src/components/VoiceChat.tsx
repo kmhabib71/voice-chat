@@ -1,57 +1,98 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 // import './App.css';
 import ConversationMemory from '@/utils/conversationMemory';
 
-function VoiceChat() {
-  const [isRecording, setIsRecording] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const [currentEmotion, setCurrentEmotion] = useState('neutral');
-  const [status, setStatus] = useState('Ready to chat');
-  const [isConnected, setIsConnected] = useState(false);
-  const [textInput, setTextInput] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [debugInfo, setDebugInfo] = useState({});
-  const [isContinuousMode, setIsContinuousMode] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0);
-  const [isAIResponding, setIsAIResponding] = useState(false);
-  const [recognitionRestartCount, setRecognitionRestartCount] = useState(0);
-  const [lastRecognitionError, setLastRecognitionError] = useState(null);
-  const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
-  const recognitionRestartCountRef = useRef(0);
-  const recognitionRestartTimeoutRef = useRef(null);
+// TypeScript interfaces for the component
+interface Message {
+  text: string;
+  isUser: boolean;
+  emotion?: string;
+  timestamp: string;
+}
 
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const socketRef = useRef(null);
-  const audioRef = useRef(null);
-  const recognitionRef = useRef(null);
-  const silenceTimerRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
-  const currentTranscriptRef = useRef('');
-  const streamRef = useRef(null);
-  const isContinuousModeRef = useRef(false); // Immediate state tracking
-  const connectionAttemptRef = useRef(false); // Prevent duplicate connections
-  const connectSocketRef = useRef(null); // Store connection function
-  const chatContainerRef = useRef(null); // Reference to chat container for scrolling
+interface DebugLogEntry {
+  timestamp: string;
+  category: string;
+  message: string;
+  data?: any;
+}
+
+interface DebugInfo {
+  [category: string]: DebugLogEntry[];
+}
+
+interface AudioContextRefs {
+  context: AudioContext | null;
+  analyser: AnalyserNode | null;
+  microphone: MediaStreamAudioSourceNode | null;
+  processor: ScriptProcessorNode | null;
+  stream: MediaStream | null;
+}
+
+interface TranscriptionResult {
+  text: string;
+  emotion?: string;
+  timestamp: string;
+}
+
+interface SpeechRecognitionEventHandler {
+  (event: SpeechRecognitionEvent): void;
+}
+
+interface SpeechRecognitionErrorHandler {
+  (event: SpeechRecognitionErrorEvent): void;
+}
+
+function VoiceChat(): JSX.Element {
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [currentEmotion, setCurrentEmotion] = useState<string>('neutral');
+  const [status, setStatus] = useState<string>('Ready to chat');
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [textInput, setTextInput] = useState<string>('');
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [debugInfo, setDebugInfo] = useState<DebugInfo>({});
+  const [isContinuousMode, setIsContinuousMode] = useState<boolean>(false);
+  const [audioLevel, setAudioLevel] = useState<number>(0);
+  const [isAIResponding, setIsAIResponding] = useState<boolean>(false);
+  const [recognitionRestartCount, setRecognitionRestartCount] = useState<number>(0);
+  const [lastRecognitionError, setLastRecognitionError] = useState<string | null>(null);
+  const [lastSpeechTime, setLastSpeechTime] = useState<number>(Date.now());
+  const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
+  const recognitionRestartCountRef = useRef<number>(0);
+  const recognitionRestartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const socketRef = useRef<Socket | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const currentTranscriptRef = useRef<string>('');
+  const streamRef = useRef<MediaStream | null>(null);
+  const isContinuousModeRef = useRef<boolean>(false); // Immediate state tracking
+  const connectionAttemptRef = useRef<boolean>(false); // Prevent duplicate connections
+  const connectSocketRef = useRef<(() => void) | null>(null); // Store connection function
+  const chatContainerRef = useRef<HTMLDivElement | null>(null); // Reference to chat container for scrolling
 
   // Conversation Memory System (non-intrusive)
-  const conversationMemoryRef = useRef(null);
-  const [memoryStats, setMemoryStats] = useState(null);
+  const conversationMemoryRef = useRef<ConversationMemory | null>(null);
+  const [memoryStats, setMemoryStats] = useState<any>(null);
 
   // Audio interruption system (now uses existing audio level monitoring)
 
   // Debug logging helper
-  const debugLog = (category, message, data = null) => {
+  const debugLog = (category: string, message: string, data: any = null): void => {
     const timestamp = new Date().toISOString();
-    const logEntry = { timestamp, category, message, data };
+    const logEntry: DebugLogEntry = { timestamp, category, message, data };
     console.log(`[DEBUG ${category.toUpperCase()}] ${message}`, data || '');
 
-    setDebugInfo(prev => ({
+    setDebugInfo((prev: DebugInfo) => ({
       ...prev,
       [category]: [...(prev[category] || []), logEntry].slice(-5), // Keep last 5 entries
     }));
@@ -94,11 +135,11 @@ function VoiceChat() {
           console.log('❌ No conversation memory available');
         }
       };
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog(
         'error',
         'Failed to initialize conversation memory',
-        error.message
+        error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)
       );
     }
   }, []);
@@ -106,9 +147,9 @@ function VoiceChat() {
   // Initialize Socket.io connection
   useEffect(() => {
     let isComponentMounted = true;
-    let reconnectTimeout = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
 
-    const connectSocket = () => {
+    const connectSocket = (): void => {
       // Prevent multiple simultaneous connection attempts
       if (connectionAttemptRef.current) {
         debugLog(
@@ -134,7 +175,7 @@ function VoiceChat() {
           reconnection: true,
           reconnectionDelay: 3000,
           reconnectionDelayMax: 30000,
-          maxReconnectionAttempts: 5,
+          reconnectionAttempts: 5,
         });
 
         socket.on('connect', () => {
@@ -174,7 +215,7 @@ function VoiceChat() {
           setStatus('Connected - Ready to chat!');
 
           // Add message immediately for instant UI update
-          setMessages(prev => [
+          setMessages((prev: Message[]) => [
             ...prev,
             {
               text: data.text,
@@ -189,25 +230,26 @@ function VoiceChat() {
           if (conversationMemoryRef.current) {
             conversationMemoryRef.current
               .processMessage(data.text, false, data.emotion)
-              .then(result => {
+              .then((result: any) => {
                 if (result.memoryUpdated) {
                   setMemoryStats(
-                    conversationMemoryRef.current.getMemoryStats()
+                    conversationMemoryRef.current?.getMemoryStats()
                   );
                   debugLog('memory', 'AI response processed in memory', result);
                 }
               })
-              .catch(error => {
+              .catch((error: unknown) => {
+                const errorMessage = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
                 debugLog(
                   'error',
                   'Memory processing failed for AI response',
-                  error.message
+                  errorMessage
                 );
               });
           }
         });
 
-        socket.on('audio_response', data => {
+        socket.on('audio_response', (data: any) => {
           if (!isComponentMounted) return;
 
           debugLog('audio', 'Received audio response', {
@@ -217,15 +259,15 @@ function VoiceChat() {
           playAudio(data.audio);
         });
 
-        socket.on('error', data => {
-          debugLog('error', 'Server error received', data.message);
+        socket.on('error', (data: any) => {
+          debugLog('error', 'Server error received', (data instanceof Error ? data.message : String(data)));
           // Don't show audio errors to user - text response is sufficient
-          if (!data.message.includes('audio')) {
-            setStatus(`Error: ${data.message}`);
+          if (!(data instanceof Error ? data.message : String(data)).includes('audio')) {
+            setStatus(`Error: ${(data instanceof Error ? data.message : String(data))}`);
           }
         });
 
-        socket.on('disconnect', reason => {
+        socket.on('disconnect', (reason: string) => {
           connectionAttemptRef.current = false;
 
           if (!isComponentMounted) {
@@ -251,23 +293,23 @@ function VoiceChat() {
           }
         });
 
-        socket.on('connect_error', error => {
+        socket.on('connect_error', (error: any) => {
           connectionAttemptRef.current = false;
 
           debugLog('error', 'Socket.io connection error', {
-            message: error.message,
-            type: error.type,
+            message: (error instanceof Error ? error.message : String(error)),
+            type: (error as any).type || 'unknown',
           });
 
           setStatus('Connection error - Check if server is running');
         });
 
-        socket.on('reconnect', attemptNumber => {
+        socket.on('reconnect', (attemptNumber: number) => {
           debugLog('socketio', `Reconnected after ${attemptNumber} attempts`);
           setStatus('Reconnected - Ready to chat!');
         });
 
-        socket.on('reconnect_attempt', attemptNumber => {
+        socket.on('reconnect_attempt', (attemptNumber: number) => {
           debugLog('socketio', `Reconnection attempt ${attemptNumber}`);
         });
 
@@ -277,7 +319,7 @@ function VoiceChat() {
         });
 
         socketRef.current = socket;
-      } catch (error) {
+      } catch (error: unknown) {
         connectionAttemptRef.current = false;
         debugLog('error', 'Error creating Socket.io connection', error);
         setStatus('Failed to create connection');
@@ -327,7 +369,7 @@ function VoiceChat() {
       }
 
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
       }
 
       if (
@@ -368,7 +410,7 @@ function VoiceChat() {
 
   // Audio interruption now uses the existing audio level monitoring system
 
-  const playAudio = async base64Audio => {
+  const playAudio = async (base64Audio: string): Promise<void> => {
     try {
       debugLog('audio', 'Attempting to play audio (optimized)', {
         audioLength: base64Audio?.length,
@@ -418,11 +460,11 @@ function VoiceChat() {
                   'Audio monitoring ready for interruption detection'
                 );
               })
-              .catch(error => {
+              .catch((error: unknown) => {
                 debugLog(
                   'error',
                   'Failed to setup audio monitoring for interruption',
-                  error.message
+                  (error instanceof Error ? error.message : String(error))
                 );
               });
           }
@@ -442,7 +484,7 @@ function VoiceChat() {
               'audio_interrupt',
               'Cleaning up audio monitoring (was started for interruption only)'
             );
-            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current.getTracks().forEach((track: any) => track.stop());
             streamRef.current = null;
             if (
               audioContextRef.current &&
@@ -488,12 +530,12 @@ function VoiceChat() {
                 latency: `${playbackLatency}ms`,
               });
             })
-            .catch(error => {
+            .catch((error: unknown) => {
               debugLog('error', 'Audio playback failed', error);
               setIsAudioPlaying(false);
               // Fallback: try again after a short delay
               setTimeout(() => {
-                audioRef.current?.play().catch(e => {
+                audioRef.current?.play().catch((e: unknown) => {
                   debugLog('error', 'Audio playback retry failed', e);
                   setIsAudioPlaying(false);
                 });
@@ -501,13 +543,13 @@ function VoiceChat() {
             });
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog('error', 'Error in optimized audio playback', error);
     }
   };
 
   // Manual reconnection function
-  const reconnectSocket = () => {
+  const reconnectSocket = (): void => {
     debugLog('socketio', 'Manual reconnection requested');
 
     // Reset connection attempt flag
@@ -532,7 +574,7 @@ function VoiceChat() {
   };
 
   // Schedule recognition restart with backoff and limits
-  const scheduleRecognitionRestart = (delay = 1000) => {
+  const scheduleRecognitionRestart = (delay: number = 1000): void => {
     // Clear any existing restart timeout
     if (recognitionRestartTimeoutRef.current) {
       clearTimeout(recognitionRestartTimeoutRef.current);
@@ -597,7 +639,7 @@ function VoiceChat() {
         } else {
           debugLog('recovery', 'Cannot restart - recognition object is null');
         }
-      } catch (error) {
+      } catch (error: unknown) {
         debugLog('error', 'Failed to restart recognition', error);
 
         // If restart fails, try again with longer delay
@@ -648,7 +690,7 @@ function VoiceChat() {
       setLastRecognitionError(null);
 
       // Handle speech results
-      recognitionRef.current.onresult = event => {
+      recognitionRef.current.onresult = (event: any) => {
         let final = '';
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -671,10 +713,10 @@ function VoiceChat() {
         resetSilenceTimer();
       };
 
-      recognitionRef.current.onerror = error => {
+      recognitionRef.current.onerror = (error: any) => {
         debugLog('error', 'Speech recognition error', {
           error: error.error,
-          message: error.message,
+          message: (error instanceof Error ? error.message : String(error)),
           timestamp: new Date().toISOString(),
           restartCount: recognitionRestartCountRef.current,
         });
@@ -760,7 +802,7 @@ function VoiceChat() {
       };
 
       // Enhanced onend handler with restart logic
-      recognitionRef.current.onend = () => {
+      recognitionRef.current.onend = (): void => {
         debugLog('continuous', 'Recognition ended', {
           continuousMode: isContinuousModeRef.current,
           restartCount: recognitionRestartCountRef.current,
@@ -783,7 +825,7 @@ function VoiceChat() {
         recognitionRef.current.start();
         debugLog('continuous', 'Speech recognition started successfully');
         setStatus('Continuous mode active - Listening...');
-      } catch (startError) {
+      } catch (startError: unknown) {
         debugLog('error', 'Error starting recognition immediately', startError);
 
         // Sometimes recognition needs a moment before starting
@@ -793,7 +835,7 @@ function VoiceChat() {
               recognitionRef.current.start();
               debugLog('continuous', 'Speech recognition started after delay');
               setStatus('Continuous mode active - Listening...');
-            } catch (retryError) {
+            } catch (retryError: unknown) {
               debugLog(
                 'error',
                 'Failed to start recognition after retry',
@@ -804,7 +846,7 @@ function VoiceChat() {
           }
         }, 500);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog('error', 'Error setting up continuous recognition', error);
       setStatus('Error setting up continuous recognition');
     }
@@ -852,13 +894,13 @@ function VoiceChat() {
       monitorAudioLevels();
 
       debugLog('silence', 'Silence detector setup complete');
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog('error', 'Error setting up silence detector', error);
     }
   };
 
   // Monitor audio levels for silence detection
-  const monitorAudioLevels = () => {
+  const monitorAudioLevels = (): void => {
     const dataArray = new Uint8Array(analyserRef.current.fftSize);
 
     const checkAudioLevel = () => {
@@ -1003,17 +1045,17 @@ function VoiceChat() {
       if (conversationMemoryRef.current) {
         conversationMemoryRef.current
           .processMessage(transcript, true, emotion)
-          .then(result => {
+          .then((result: any) => {
             if (result.memoryUpdated) {
               setMemoryStats(conversationMemoryRef.current.getMemoryStats());
               debugLog('memory', 'User message processed in memory', result);
             }
           })
-          .catch(error => {
+          .catch((error: unknown) => {
             debugLog(
               'error',
               'Memory processing failed for user message',
-              error.message
+              (error instanceof Error ? error.message : String(error))
             );
           });
       }
@@ -1046,13 +1088,13 @@ function VoiceChat() {
       } else {
         debugLog('error', 'Socket.io not connected for continuous mode');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog('error', 'Error processing transcript segment', error);
     }
   };
 
   // Simple emotion detection (can be enhanced)
-  const detectEmotionFromText = text => {
+  const detectEmotionFromText = (text: any) => {
     const emotions = {
       joy: [
         'happy',
@@ -1116,7 +1158,7 @@ function VoiceChat() {
     let maxMatches = 0;
 
     for (const [emotion, keywords] of Object.entries(emotions)) {
-      const matches = keywords.filter(keyword =>
+      const matches = keywords.filter((keyword: any) =>
         textLower.includes(keyword)
       ).length;
       if (matches > maxMatches) {
@@ -1148,7 +1190,7 @@ function VoiceChat() {
         try {
           recognitionRef.current.stop();
           debugLog('continuous', 'Speech recognition stopped');
-        } catch (error) {
+        } catch (error: unknown) {
           debugLog('error', 'Error stopping speech recognition', error);
         }
       }
@@ -1174,7 +1216,7 @@ function VoiceChat() {
 
       // Stop audio stream
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => {
+        streamRef.current.getTracks().forEach((track: any) => {
           track.stop();
           debugLog('continuous', `Stopped audio track: ${track.label}`);
         });
@@ -1189,7 +1231,7 @@ function VoiceChat() {
         try {
           await audioContextRef.current.close();
           debugLog('continuous', 'Audio context closed');
-        } catch (error) {
+        } catch (error: unknown) {
           debugLog('error', 'Error closing audio context', error);
         }
         audioContextRef.current = null;
@@ -1239,7 +1281,7 @@ function VoiceChat() {
         resetSilenceTimer();
 
         debugLog('continuous', 'Continuous mode setup completed successfully');
-      } catch (error) {
+      } catch (error: unknown) {
         debugLog('error', 'Error setting up continuous mode', error);
         setIsContinuousMode(false);
         setStatus('Error setting up continuous mode');
@@ -1266,7 +1308,7 @@ function VoiceChat() {
       debugLog(
         'microphone',
         'Available audio input devices',
-        audioInputs.map(d => ({
+        audioInputs.map((d: any) => ({
           deviceId: d.deviceId,
           label: d.label || 'Unknown device',
           kind: d.kind,
@@ -1294,7 +1336,7 @@ function VoiceChat() {
       });
       audioChunksRef.current = [];
 
-      mediaRecorderRef.current.ondataavailable = event => {
+      mediaRecorderRef.current.ondataavailable = (event: any) => {
         debugLog('recording', 'Audio data chunk received', {
           size: event.data.size,
         });
@@ -1308,7 +1350,7 @@ function VoiceChat() {
         });
         debugLog('recording', 'Created audio blob', { size: audioBlob.size });
         await transcribeAudio(audioBlob);
-        stream.getTracks().forEach(track => {
+        stream.getTracks().forEach((track: any) => {
           debugLog('microphone', 'Stopping audio track', {
             label: track.label,
           });
@@ -1320,7 +1362,7 @@ function VoiceChat() {
       setIsRecording(true);
       setStatus('Listening...');
       debugLog('recording', 'Recording started successfully');
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog('error', 'Error starting recording', error);
       setStatus('Microphone access denied');
     }
@@ -1372,7 +1414,7 @@ function VoiceChat() {
       if (conversationMemoryRef.current) {
         conversationMemoryRef.current
           .processMessage(transcription.text, true, transcription.emotion)
-          .then(result => {
+          .then((result: any) => {
             if (result.memoryUpdated) {
               setMemoryStats(conversationMemoryRef.current.getMemoryStats());
               debugLog(
@@ -1382,11 +1424,11 @@ function VoiceChat() {
               );
             }
           })
-          .catch(error => {
+          .catch((error: unknown) => {
             debugLog(
               'error',
               'Memory processing failed for transcribed message',
-              error.message
+              (error instanceof Error ? error.message : String(error))
             );
           });
       }
@@ -1420,9 +1462,9 @@ function VoiceChat() {
       }
 
       setStatus('Ready to chat');
-    } catch (error) {
+    } catch (error: unknown) {
       debugLog('error', 'Error transcribing audio', {
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
         response: error.response?.data,
         status: error.response?.status,
       });
@@ -1451,7 +1493,7 @@ function VoiceChat() {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (error) {
+      } catch (error: unknown) {
         debugLog(
           'manual',
           'Error stopping recognition for manual restart',
@@ -1486,17 +1528,17 @@ function VoiceChat() {
     if (conversationMemoryRef.current) {
       conversationMemoryRef.current
         .processMessage(textInput, true, detectedEmotion)
-        .then(result => {
+        .then((result: any) => {
           if (result.memoryUpdated) {
             setMemoryStats(conversationMemoryRef.current.getMemoryStats());
             debugLog('memory', 'Text message processed in memory', result);
           }
         })
-        .catch(error => {
+        .catch((error: unknown) => {
           debugLog(
             'error',
             'Memory processing failed for text message',
-            error.message
+            (error instanceof Error ? error.message : String(error))
           );
         });
     }
@@ -1525,7 +1567,7 @@ function VoiceChat() {
     setTextInput('');
   };
 
-  const handleVoiceButtonClick = () => {
+  const handleVoiceButtonClick = (): void => {
     if (isContinuousMode) {
       toggleContinuousMode();
     } else if (isRecording) {
@@ -1535,11 +1577,11 @@ function VoiceChat() {
     }
   };
 
-  const handleContinuousModeToggle = () => {
+  const handleContinuousModeToggle = (): void => {
     toggleContinuousMode();
   };
 
-  const getEmotionEmoji = emotion => {
+  const getEmotionEmoji = (emotion: any) => {
     const emojis = {
       joy: '😊',
       sadness: '😢',
@@ -1732,12 +1774,12 @@ function VoiceChat() {
           {Object.entries(debugInfo)
             .slice(-3)
             .map(([category, logs]) =>
-              logs.slice(-1).map((log, i) => (
+              (logs as any[]).slice(-1).map((log: any, i: number) => (
                 <div
                   key={`${category}-${i}`}
                   style={{ fontSize: '10px', opacity: 0.8 }}
                 >
-                  [{category.toUpperCase()}] {log.message}
+                  [{category.toUpperCase()}] {(log instanceof Error ? log.message : String(log))}
                 </div>
               ))
             )}

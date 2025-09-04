@@ -1,7 +1,62 @@
 // Conversation Memory Management System
 // Efficient keyword-based conversation memory with local storage persistence
 
+interface KeywordData {
+  count: number;
+  lastSeen: number;
+  contexts: string[];
+  firstSeen: number;
+}
+
+interface MemoryKeywords {
+  entities: Map<string, KeywordData>;
+  topics: Map<string, KeywordData>;
+  intents: Map<string, KeywordData>;
+  emotions: Map<string, KeywordData>;
+  context: Map<string, KeywordData>;
+  [key: string]: Map<string, KeywordData>; // Index signature for dynamic access
+}
+
+interface SessionData {
+  messageCount: number;
+  startTime: number;
+  lastActive: number;
+  dominantTopics: string[];
+  conversationTone: string;
+}
+
+interface RecentMessage {
+  text: string;
+  keywords: any;
+  timestamp: number;
+  isUser: boolean;
+  emotion: string;
+}
+
+interface MemoryData {
+  sessionId: string;
+  keywords: MemoryKeywords;
+  recentMessages: RecentMessage[];
+  session: SessionData;
+}
+
+interface KeywordExtractionResult {
+  entities: string[];
+  topics: string[];
+  intents: string[];
+  emotions: string[];
+  context: string[];
+  [key: string]: string[]; // Index signature for dynamic access
+}
+
 class ConversationMemory {
+  private sessionId: string;
+  private storageKey: string;
+  private maxRecentMessages: number;
+  private keywordDecayFactor: number;
+  private memory: MemoryData;
+  private debugEnabled: boolean;
+
   constructor() {
     this.sessionId = this.generateSessionId();
     this.storageKey = 'conversation_memory';
@@ -43,7 +98,7 @@ class ConversationMemory {
   }
 
   // Debug logging helper
-  debugLog(message, data = null) {
+  debugLog(message: string, data: any = null): void {
     if (this.debugEnabled) {
       console.log(`[ConversationMemory] ${message}`, data || '');
     }
@@ -77,8 +132,9 @@ class ConversationMemory {
 
         return parsed;
       }
-    } catch (error) {
-      this.debugLog('Error loading memory from storage', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.debugLog('Error loading memory from storage', errorMessage);
     }
     return null;
   }
@@ -102,13 +158,14 @@ class ConversationMemory {
 
       localStorage.setItem(this.storageKey, JSON.stringify(memoryForStorage));
       this.debugLog('Memory saved to storage');
-    } catch (error) {
-      this.debugLog('Error saving memory to storage', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.debugLog('Error saving memory to storage', errorMessage);
     }
   }
 
   // Extract keywords from text using server API
-  async extractKeywords(text, contextTopics = []) {
+  async extractKeywords(text: string, contextTopics: string[] = []): Promise<KeywordExtractionResult> {
     try {
       const response = await fetch('/api/extract-keywords', {
         method: 'POST',
@@ -127,8 +184,9 @@ class ConversationMemory {
 
       const result = await response.json();
       return result.keywords;
-    } catch (error) {
-      this.debugLog('Error extracting keywords', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.debugLog('Error extracting keywords', errorMessage);
 
       // Fallback: basic keyword extraction with actual emotion detection
       const fallbackEmotion = this.detectEmotionFromText(text);
@@ -143,7 +201,7 @@ class ConversationMemory {
   }
 
   // Update keyword frequencies with decay
-  updateKeywordFrequency(category, keyword, increment = 1) {
+  updateKeywordFrequency(category: string, keyword: string, increment: number = 1): void {
     if (!this.memory.keywords[category]) {
       this.memory.keywords[category] = new Map();
     }
@@ -170,7 +228,7 @@ class ConversationMemory {
   }
 
   // Process new message and update memory
-  async processMessage(text, isUser = true, emotion = 'neutral') {
+  async processMessage(text: string, isUser: boolean = true, emotion: string = 'neutral'): Promise<any> {
     try {
       this.debugLog('Processing message', {
         text: text.substring(0, 50) + '...',
@@ -227,7 +285,13 @@ class ConversationMemory {
 
       this.debugLog('Message processed', {
         keywordsExtracted: Object.keys(keywords).reduce(
-          (acc, key) => acc + keywords[key].length,
+          (acc, key) => {
+            // Only count arrays (entities, topics, intents, emotions, context)
+            if (Array.isArray(keywords[key])) {
+              return acc + keywords[key].length;
+            }
+            return acc;
+          },
           0
         ),
         totalMessages: this.memory.recentMessages.length,
@@ -238,12 +302,13 @@ class ConversationMemory {
         extractedKeywords: keywords,
         memoryUpdated: true,
       };
-    } catch (error) {
-      this.debugLog('Error processing message', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.debugLog('Error processing message', errorMessage);
       return {
         extractedKeywords: null,
         memoryUpdated: false,
-        error: error.message,
+        error: errorMessage,
       };
     }
   }
@@ -298,7 +363,7 @@ class ConversationMemory {
   }
 
   // Build context for AI using memory
-  buildContextForAI(userQuery) {
+  buildContextForAI(userQuery: string): any {
     try {
       // Get relevant information from memory
       const topTopics = this.getDominantTopics(3);
@@ -345,8 +410,9 @@ class ConversationMemory {
         },
         tokenCount: Math.ceil(contextPrompt.length / 4), // Rough token estimate
       };
-    } catch (error) {
-      this.debugLog('Error building context for AI', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.debugLog('Error building context for AI', errorMessage);
       return {
         contextPrompt: '',
         relevantKeywords: {},
@@ -385,7 +451,7 @@ class ConversationMemory {
   }
 
   // Simple emotion detection (client-side fallback)
-  detectEmotionFromText(text) {
+  detectEmotionFromText(text: string): string {
     const emotions = {
       joy: [
         'happy',
