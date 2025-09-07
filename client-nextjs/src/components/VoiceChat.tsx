@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
 // import './App.css';
-import ConversationMemory from '@/utils/conversationMemory';
+// Memory v2 is now handled server-side - no more client-side localStorage memory
 
 // TypeScript interfaces for the component
 interface Message {
@@ -80,9 +80,8 @@ function VoiceChat(): JSX.Element {
   const connectSocketRef = useRef<(() => void) | null>(null); // Store connection function
   const chatContainerRef = useRef<HTMLDivElement | null>(null); // Reference to chat container for scrolling
 
-  // Conversation Memory System (non-intrusive)
-  const conversationMemoryRef = useRef<ConversationMemory | null>(null);
-  const [memoryStats, setMemoryStats] = useState<any>(null);
+  // User identification for Memory v2 (server-side)
+  const [userId] = useState<string>('default'); // TODO: Replace with actual user authentication
 
   // Audio interruption system (now uses existing audio level monitoring)
 
@@ -98,51 +97,10 @@ function VoiceChat(): JSX.Element {
     }));
   };
 
-  // Initialize Conversation Memory System
+  // Memory v2 is now handled server-side - no client initialization needed
   useEffect(() => {
-    try {
-      conversationMemoryRef.current = new ConversationMemory();
-      setMemoryStats(conversationMemoryRef.current.getMemoryStats());
-      debugLog(
-        'memory',
-        'Conversation memory system initialized',
-        conversationMemoryRef.current.getMemoryStats()
-      );
-
-      // Make memory available for debugging in browser console
-      window.debugMemory = () => {
-        if (conversationMemoryRef.current) {
-          const exported = conversationMemoryRef.current.exportMemory();
-          console.log('🧠 Current conversation memory:', exported);
-          console.log(
-            '📊 Memory stats:',
-            conversationMemoryRef.current.getMemoryStats()
-          );
-          return exported;
-        } else {
-          console.log('❌ No conversation memory available');
-          return null;
-        }
-      };
-
-      // Make memory clear function available for testing
-      window.clearMemory = () => {
-        if (conversationMemoryRef.current) {
-          conversationMemoryRef.current.clearMemory();
-          setMemoryStats(conversationMemoryRef.current.getMemoryStats());
-          console.log('🧹 Memory cleared');
-        } else {
-          console.log('❌ No conversation memory available');
-        }
-      };
-    } catch (error: unknown) {
-      debugLog(
-        'error',
-        'Failed to initialize conversation memory',
-        error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)
-      );
-    }
-  }, []);
+    debugLog('memory', 'Memory v2 system active on server-side', { userId });
+  }, [userId]);
 
   // Initialize Socket.io connection
   useEffect(() => {
@@ -226,27 +184,12 @@ function VoiceChat(): JSX.Element {
           ]);
           setCurrentEmotion(data.emotion);
 
-          // Process AI response through memory system (non-blocking)
-          if (conversationMemoryRef.current) {
-            conversationMemoryRef.current
-              .processMessage(data.text, false, data.emotion)
-              .then((result: any) => {
-                if (result.memoryUpdated) {
-                  setMemoryStats(
-                    conversationMemoryRef.current?.getMemoryStats()
-                  );
-                  debugLog('memory', 'AI response processed in memory', result);
-                }
-              })
-              .catch((error: unknown) => {
-                const errorMessage = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
-                debugLog(
-                  'error',
-                  'Memory processing failed for AI response',
-                  errorMessage
-                );
-              });
-          }
+          // Memory v2 processing is handled server-side - no client processing needed
+          debugLog('memory', 'AI response processed by Memory v2 server-side', { 
+            text: data.text,
+            emotion: data.emotion,
+            userId 
+          });
         });
 
         socket.on('audio_response', (data: any) => {
@@ -1041,47 +984,28 @@ function VoiceChat(): JSX.Element {
         userMessage
       );
 
-      // Process user message through memory system (non-blocking)
-      if (conversationMemoryRef.current) {
-        conversationMemoryRef.current
-          .processMessage(transcript, true, emotion)
-          .then((result: any) => {
-            if (result.memoryUpdated) {
-              setMemoryStats(conversationMemoryRef.current.getMemoryStats());
-              debugLog('memory', 'User message processed in memory', result);
-            }
-          })
-          .catch((error: unknown) => {
-            debugLog(
-              'error',
-              'Memory processing failed for user message',
-              (error instanceof Error ? error.message : String(error))
-            );
-          });
-      }
+      // Memory v2 processing is handled server-side - no client processing needed
+      debugLog('memory', 'User message processed by Memory v2 server-side', {
+        text: transcript,
+        emotion,
+        userId
+      });
 
-      // Send to Socket.io for AI response with optimized payload
+      // Send to Socket.io for AI response with Memory v2
       if (socketRef.current && socketRef.current.connected) {
-        // Build conversation memory context
-        let conversationMemory = null;
-        if (conversationMemoryRef.current) {
-          const memoryExport = conversationMemoryRef.current.exportMemory();
-          conversationMemory = memoryExport;
-        }
-
         const messageData = {
           text: transcript,
           emotion: emotion,
+          userId: userId, // Memory v2 uses userId for server-side memory management
           timestamp: Date.now(), // Add timestamp for latency tracking
-          conversationMemory: conversationMemory, // Include memory context
         };
         debugLog(
           'socketio',
-          'Sending continuous transcript with memory to server',
+          'Sending continuous transcript to server (Memory v2)',
           {
             text: transcript,
             emotion,
-            memoryTopics: conversationMemory?.session?.dominantTopics || [],
+            userId,
           }
         );
         socketRef.current.emit('voice_message', messageData);
@@ -1410,50 +1334,27 @@ function VoiceChat(): JSX.Element {
       setMessages(prev => [...prev, userMessage]);
       debugLog('user_message', 'User message added', userMessage);
 
-      // Process transcribed user message through memory system (non-blocking)
-      if (conversationMemoryRef.current) {
-        conversationMemoryRef.current
-          .processMessage(transcription.text, true, transcription.emotion)
-          .then((result: any) => {
-            if (result.memoryUpdated) {
-              setMemoryStats(conversationMemoryRef.current.getMemoryStats());
-              debugLog(
-                'memory',
-                'Transcribed message processed in memory',
-                result
-              );
-            }
-          })
-          .catch((error: unknown) => {
-            debugLog(
-              'error',
-              'Memory processing failed for transcribed message',
-              (error instanceof Error ? error.message : String(error))
-            );
-          });
-      }
+      // Memory v2 processing is handled server-side - no client processing needed
+      debugLog('memory', 'Transcribed message processed by Memory v2 server-side', {
+        text: transcription.text,
+        emotion: transcription.emotion,
+        userId
+      });
 
-      // Send to Socket.io for AI response
+      // Send to Socket.io for AI response with Memory v2
       if (socketRef.current && socketRef.current.connected) {
-        // Build conversation memory context
-        let conversationMemory = null;
-        if (conversationMemoryRef.current) {
-          const memoryExport = conversationMemoryRef.current.exportMemory();
-          conversationMemory = memoryExport;
-        }
-
         const messageData = {
           text: transcription.text,
           emotion: transcription.emotion,
-          conversationMemory: conversationMemory, // Include memory context
+          userId: userId, // Memory v2 uses userId for server-side memory management
         };
         debugLog(
           'socketio',
-          'Sending transcribed message with memory to server',
+          'Sending transcribed message to server (Memory v2)',
           {
             text: transcription.text,
             emotion: transcription.emotion,
-            memoryTopics: conversationMemory?.session?.dominantTopics || [],
+            userId,
           }
         );
         socketRef.current.emit('voice_message', messageData);
@@ -1523,41 +1424,22 @@ function VoiceChat(): JSX.Element {
     setMessages(prev => [...prev, userMessage]);
     debugLog('text_message', 'Text message sent', userMessage);
 
-    // Process text message through memory system (non-blocking)
+    // Memory v2 processing is handled server-side - no client processing needed
     const detectedEmotion = detectEmotionFromText(textInput);
-    if (conversationMemoryRef.current) {
-      conversationMemoryRef.current
-        .processMessage(textInput, true, detectedEmotion)
-        .then((result: any) => {
-          if (result.memoryUpdated) {
-            setMemoryStats(conversationMemoryRef.current.getMemoryStats());
-            debugLog('memory', 'Text message processed in memory', result);
-          }
-        })
-        .catch((error: unknown) => {
-          debugLog(
-            'error',
-            'Memory processing failed for text message',
-            (error instanceof Error ? error.message : String(error))
-          );
-        });
-    }
+    debugLog('memory', 'Text message processed by Memory v2 server-side', {
+      text: textInput,
+      emotion: detectedEmotion,
+      userId
+    });
 
     if (socketRef.current && socketRef.current.connected) {
-      // Build conversation memory context
-      let conversationMemory = null;
-      if (conversationMemoryRef.current) {
-        const memoryExport = conversationMemoryRef.current.exportMemory();
-        conversationMemory = memoryExport;
-      }
-
       const messageData = {
         text: textInput,
-        conversationMemory: conversationMemory, // Include memory context
+        userId: userId, // Memory v2 uses userId for server-side memory management
       };
-      debugLog('socketio', 'Sending text message with memory to server', {
+      debugLog('socketio', 'Sending text message to server (Memory v2)', {
         text: textInput,
-        memoryTopics: conversationMemory?.session?.dominantTopics || [],
+        userId,
       });
       socketRef.current.emit('voice_message', messageData);
     } else {
@@ -1742,33 +1624,21 @@ function VoiceChat(): JSX.Element {
           <div className="error-text">Last Error: {lastRecognitionError}</div>
         )}
         <div>Status: {status}</div>
-        {memoryStats && (
-          <div
-            style={{
-              marginTop: '8px',
-              borderTop: '1px solid #333',
-              paddingTop: '8px',
-            }}
-          >
-            <strong>🧠 Memory System:</strong>
-            <div style={{ fontSize: '10px', opacity: 0.9 }}>
-              Messages: {memoryStats.messageCount} | Topics:{' '}
-              {memoryStats.keywordStats.topics || 0} | Entities:{' '}
-              {memoryStats.keywordStats.entities || 0}
-            </div>
-            <div style={{ fontSize: '10px', opacity: 0.9 }}>
-              Tone: {memoryStats.conversationTone} | Session:{' '}
-              {Math.round(memoryStats.sessionDuration / 60000)}m
-            </div>
-            {memoryStats.dominantTopics &&
-              memoryStats.dominantTopics.length > 0 && (
-                <div style={{ fontSize: '10px', opacity: 0.8 }}>
-                  Top Topics:{' '}
-                  {memoryStats.dominantTopics.slice(0, 3).join(', ')}
-                </div>
-              )}
+        <div
+          style={{
+            marginTop: '8px',
+            borderTop: '1px solid #333',
+            paddingTop: '8px',
+          }}
+        >
+          <strong>🧠 Memory v2 System:</strong>
+          <div style={{ fontSize: '10px', opacity: 0.9 }}>
+            Server-side memory active for userId: {userId}
           </div>
-        )}
+          <div style={{ fontSize: '10px', opacity: 0.8 }}>
+            Context-aware storage with MongoDB persistence
+          </div>
+        </div>
         <div style={{ marginTop: '10px' }}>
           <strong>Recent Logs:</strong>
           {Object.entries(debugInfo)
