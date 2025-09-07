@@ -78,7 +78,8 @@ Task Group 1.2 implemented the core Memory Manager System with **context-aware i
 **Functions**:
 
 - `store(userId, summary, metadata)` - Store episode with embedding
-- `search(userId, query, limit)` - Vector similarity search
+- `search(userId, query, limit)` - Vector similarity search with MongoDB aggregation pipeline
+- `searchEpisodicMemories(userId, query, limit, keywords)` - Semantic search with keyword fallback
 - `updateEmbedding(userId, episodeId, embedding)` - Update vector embedding
 - `getEpisodes(userId, limit, sortBy)` - Retrieve episodes chronologically
 - `clear(userId)` - Remove all episodic memories
@@ -147,7 +148,7 @@ Task Group 1.2 implemented the core Memory Manager System with **context-aware i
 
 - `createSessionSummary(userId, messages, metadata)` - Complete summarization pipeline
 - `generateAISummary(messages, metadata)` - GPT-4 powered summary generation
-- `createEmbedding(text)` - Generate 1536-dim vector embeddings
+- `createEmbedding(text)` - Generate 1536-dim vector embeddings using OpenAI wrapper
 - `extractMetadata(messages, sessionMetadata)` - Extract session characteristics
 - `storeEpisodicMemory(memoryData)` - Store with embedding
 - `batchProcessSessions(userId, sessionBatch)` - Process multiple sessions
@@ -164,8 +165,28 @@ Task Group 1.2 implemented the core Memory Manager System with **context-aware i
 
 **New Functions Added**:
 
-- `createEmbedding(text)` - Generate text embeddings using text-embedding-3-small
+- `createEmbedding(text)` - Generate text embeddings using text-embedding-3-small (1536 dimensions)
+- `generateEmbedding(text)` - Alternative embedding method with enhanced error handling
 - `generateSessionSummary(messages, options)` - AI-powered conversation summarization
+
+**Vector Embedding Implementation**:
+```javascript
+// text-embedding-3-small integration (1536 dimensions)
+async createEmbedding(text) {
+  const response = await this.client.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: text.trim(),
+    encoding_format: 'float'
+  });
+  return response.data[0].embedding; // Returns 1536-dim vector
+}
+```
+
+**Key Features**:
+- **Model**: OpenAI text-embedding-3-small (efficient, high-quality)
+- **Dimensions**: 1536-dimensional vectors for semantic similarity
+- **Validation**: Input text validation and embedding format verification
+- **Error Handling**: Robust fallback mechanisms for API failures
 
 **Context-Aware Enhancement**:
 
@@ -353,7 +374,12 @@ if (contextAnalysis && !contextAnalysis.information_ownership.about_user) {
 - **Test Coverage**: 93.3% accuracy for importance scoring, 100% summary generation, context validation implemented
 - **Performance**: Sub-millisecond importance scoring + context analysis, ~6s AI summarization
 - **Storage Types**: 5 MongoDB collections with proper indexing, TTL, and intelligent routing
-- **Vector Dimensions**: 1536-dimensional embeddings for semantic search
+- **Vector Search Implementation**: 
+  - **Embedding Model**: OpenAI text-embedding-3-small (1536 dimensions)
+  - **Vector Storage**: MongoDB with vectorEmbedding field in episodic_memory collection
+  - **Search Pipeline**: MongoDB aggregation with $vectorSearch stage
+  - **Fallback Strategy**: Keyword-based text search when vector search fails
+  - **Similarity Scoring**: Cosine similarity with configurable threshold filtering
 - **Context Features**: Subject detection, information ownership, temporal analysis, relationship mapping
 - **Memory Routing**: Intelligent context-aware routing with fallback to importance-based system
 
